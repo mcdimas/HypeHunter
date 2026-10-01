@@ -38,6 +38,17 @@ class AuthIdentity(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
 
 
+class TestPayment(SQLModel, table=True):
+    __tablename__ = "test_payments"
+    id: str = Field(primary_key=True, max_length=36)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    provider_id: str | None = Field(default=None, unique=True, max_length=80)
+    status: str = Field(default="pending", max_length=32)
+    confirmation_url: str | None = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    test_access_until: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+
+
 class LoginSession(SQLModel, table=True):
     __tablename__ = "auth_sessions"
 

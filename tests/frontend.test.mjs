@@ -31,6 +31,22 @@ function appContext() {
 const response = data => ({ ok: true, status: 200, json: async () => data });
 const deferred = () => { let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve}; };
 
+test('sandbox checkout is hidden by default and never promises real access',()=>{
+  const c=appContext();
+  assert.equal(c.run('testBillingMarkup()'),'');
+  c.run("state.testBilling={owner:true,available:false,payment:null}");
+  assert.match(c.run('testBillingMarkup()'),/disabled>Тестовая подписка — 1 ₽/);
+  assert.match(c.run('testBillingMarkup()'),/Настройки тестового магазина/);
+  c.run("state.testBilling={available:true,payment:{status:'succeeded',test_access_until:'2026-11-02T10:00:00Z'}}");
+  const html=c.run('testBillingMarkup()');
+  assert.match(html,/Тестовая подписка — 1 ₽/);
+  assert.match(html,/Реальные деньги не списываются/);
+  assert.match(html,/Тестовая оплата прошла/);
+  assert.match(html,/Тест не меняет ваш тариф/);
+  c.run('clearAccountMemory()');
+  assert.equal(c.run('state.testBilling'),null);
+});
+
 test("themes persist and profile tabs show truthful account limits", () => {
   const c=appContext();
   c.run("setTheme('light')");

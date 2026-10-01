@@ -12,6 +12,7 @@ from .database import engine
 from .models import Competitor, Reel, User
 from .yandex_auth import router as yandex_router
 from .email_auth import router as email_router
+from .billing import router as billing_router, WEBHOOK_PATH
 
 
 settings = get_settings()
@@ -47,8 +48,9 @@ async def account_boundary(request, call_next):
         "/api/telegram/webhook",
         "/api/auth/yandex/start", "/api/auth/yandex/callback",
         "/api/auth/email/start", "/api/auth/email/finish",
+        WEBHOOK_PATH,
     }
-    if request.method not in {"GET", "HEAD", "OPTIONS"} and path != "/api/telegram/webhook":
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and path not in {"/api/telegram/webhook", WEBHOOK_PATH}:
         try:
             validate_csrf(request, settings)
         except Exception as error:
@@ -84,4 +86,5 @@ app.include_router(auth_router)
 app.include_router(webhook_router)
 app.include_router(yandex_router)
 app.include_router(email_router)
+app.include_router(billing_router)
 app.mount("/media", StaticFiles(directory=settings.media_root, check_dir=False), name="media")

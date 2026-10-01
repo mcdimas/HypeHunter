@@ -65,6 +65,82 @@ def test_preferences_and_workspace_clear_are_isolated(auth_app):
     assert len(second.get("/api/remixes").json()) == 1
 
 
+def test_yookassa_owner_sandbox_checkout_and_verified_notifications(auth_app, monkeypatch):
+    app, engine = auth_app
+    billing = importlib.import_module('app.billing')
+    settings = app.dependency_overrides[get_settings]()
+    settings.owner_telegram_id = 918231
+    settings.yookassa_test_shop_id = '123456'
+    settings.yookassa_test_secret_key = 'test_fake_key'
+    client, headers = browser(app)
+    complete_login(app, client, headers, 918231, 'Billing owner test', 9182310)
+    other, other_headers = browser(app)
+    complete_login(app, other, other_headers, 918232, 'Billing other test', 9182320)
+    assert other.get('/api/billing/test').json()['available'] is False
+    assert other.post('/api/billing/test/checkout', headers=other_headers).status_code == 404
+    assert client.post('/api/billing/test/checkout').status_code == 403
+    calls = []
+    remote = {}
+    def provider(settings, method, path, payload=None, key=None):
+        calls.append((method, path, payload, key))
+        if method == 'POST':
+            remote.update(id='sandbox-provider-id', status='pending', paid=False, test=True,
+                          amount=payload['amount'], metadata=payload['metadata'],
+                          confirmation={'confirmation_url':'https://yoomoney.ru/checkout/test'})
+        return dict(remote)
+    monkeypatch.setattr(billing, 'provider_request', provider)
+    first = client.post('/api/billing/test/checkout', headers=headers)
+    assert first.status_code == 200, first.text
+    order = first.json()
+    assert calls[0][2]['amount'] == {'value':'1.00','currency':'RUB'}
+    assert calls[0][2]['save_payment_method'] is False
+    assert calls[0][2]['capture'] is True
+    assert calls[0][3] == order['id']
+    assert client.post('/api/billing/test/checkout', headers=headers).json()['id'] == order['id']
+    assert len([c for c in calls if c[0] == 'POST']) == 1
+    refresh = '/api/billing/test/payments/'+order['id']+'/refresh'
+    assert other.post(refresh, headers=other_headers).status_code == 404
+    notice={'type':'notification','event':'payment.succeeded','object':{'id':'sandbox-provider-id','status':'succeeded','paid':True}}
+    # Forged success is ignored: our authenticated GET still returns pending.
+    assert client.post('/api/billing/yookassa/test/webhook', json=notice).status_code == 200
+    assert client.get('/api/billing/test').json()['payment']['status'] == 'pending'
+    remote.update(status='succeeded', paid=True)
+    assert client.post('/api/billing/yookassa/test/webhook', json=notice).status_code == 200
+    paid = client.get('/api/billing/test').json()['payment']
+    assert paid['status'] == 'succeeded' and paid['test_access_until']
+    assert client.post('/api/billing/yookassa/test/webhook', json=notice).status_code == 200
+    assert client.post(refresh, headers=headers).json()['test_access_until'] == paid['test_access_until']
+    assert client.get('/api/trial').json() == {'limit':5,'used':0,'remaining':5}
+    remote['test'] = False
+    assert client.post(refresh, headers=headers).status_code == 502
+    remote['test'] = True
+    remote['amount'] = {'value':'1999.00','currency':'RUB'}
+    assert client.post(refresh, headers=headers).status_code == 502
+    settings.yookassa_test_secret_key = 'live_not_a_test_key'
+    assert client.get('/api/billing/test').json()['available'] is False
+    assert client.post('/api/billing/test/checkout', headers=headers).status_code == 404
+
+
+def test_yookassa_retry_keeps_persistent_idempotence_key(auth_app, monkeypatch):
+    from fastapi import HTTPException
+    app, _ = auth_app
+    billing = importlib.import_module('app.billing')
+    settings = app.dependency_overrides[get_settings]()
+    settings.owner_telegram_id = 918233
+    settings.yookassa_test_shop_id = '123456'
+    settings.yookassa_test_secret_key = 'test_fake_key'
+    client, headers = browser(app)
+    complete_login(app, client, headers, 918233, 'Billing retry test', 9182330)
+    keys=[]
+    def unavailable(settings, method, path, payload=None, key=None):
+        keys.append(key)
+        raise HTTPException(503,'Temporary test outage')
+    monkeypatch.setattr(billing, 'provider_request', unavailable)
+    assert client.post('/api/billing/test/checkout',headers=headers).status_code == 503
+    assert client.post('/api/billing/test/checkout',headers=headers).status_code == 503
+    assert keys[0] == keys[1] and keys[0]
+
+
 def email_setup(app, monkeypatch):
     module = importlib.import_module("app.email_auth")
     settings = app.dependency_overrides[get_settings]()
