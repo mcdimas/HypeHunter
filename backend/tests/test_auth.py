@@ -318,6 +318,140 @@ def test_polling_uses_same_handshake_and_deduplicates(auth_app):
         )).all()} == {700, 701, 702}
 
 
+def yandex_setup(app, monkeypatch, subject="90001"):
+    module = importlib.import_module("app.yandex_auth")
+    settings = app.dependency_overrides[get_settings]()
+    settings.yandex_client_id = "test-yandex-client"
+    monkeypatch.setattr(module, "_profile", lambda *args: {
+        "id": subject, "display_name": "Yandex User", "first_name": "Yandex", "last_name": "", "login": "example"})
+    return module
+
+
+def yandex_start(client, headers, **payload):
+    from urllib.parse import urlparse, parse_qs
+    response = client.post("/api/auth/yandex/start", json=payload, headers=headers)
+    assert response.status_code == 200, response.text
+    return parse_qs(urlparse(response.json()["authorize_url"]).query)
+
+
+def yandex_finish(client, params, **extra):
+    return client.get("/api/auth/yandex/callback", params={"state": params["state"][0], "code": "provider-code", **extra}, follow_redirects=False)
+
+
+def test_yandex_pkce_login_repeat_and_logout(auth_app, monkeypatch):
+    import base64
+    import hashlib
+    app, engine = auth_app
+    module = yandex_setup(app, monkeypatch)
+    client, headers = browser(app)
+    assert client.get("/api/auth/csrf").json()["providers"]["yandex"] is True
+    assert client.post("/api/auth/yandex/start", json={}).status_code == 403
+    params = yandex_start(client, headers, return_to="https://evil.example")
+    request_id, secret = client.cookies.get(module.COOKIE).split(".")
+    verifier = module._verifier(app.dependency_overrides[get_settings](), request_id, secret)
+    assert params["code_challenge"] == [base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")]
+    assert params["code_challenge_method"] == ["S256"]
+    result = yandex_finish(client, params)
+    assert result.status_code == 303 and result.headers["location"] == "/today"
+    assert "HttpOnly" in result.headers["set-cookie"] and "Secure" in result.headers["set-cookie"]
+    user_id = client.get("/api/auth/me").json()["id"]
+    assert client.get("/api/auth/me").json()["providers"] == ["yandex"]
+    assert yandex_finish(client, params).headers["location"].startswith("/login?auth_error=")
+    old_cookie = client.cookies.get("__Host-hype_session")
+    assert client.post("/api/auth/logout", headers=headers).status_code == 200
+    assert client.get("/api/auth/me").status_code == 401
+    params = yandex_start(client, headers)
+    assert yandex_finish(client, params).status_code == 303
+    assert client.get("/api/auth/me").json()["id"] == user_id
+    assert client.cookies.get("__Host-hype_session") != old_cookie
+
+
+def test_yandex_browser_binding_expiry_denial_and_provider_failure(auth_app, monkeypatch):
+    from app.models import OAuthRequest
+    app, engine = auth_app
+    module = yandex_setup(app, monkeypatch)
+    client, headers = browser(app)
+    stranger, _ = browser(app)
+    params = yandex_start(client, headers)
+    assert "yandex_invalid" in yandex_finish(stranger, params).headers["location"]
+    with Session(engine) as session:
+        row = session.get(OAuthRequest, params["state"][0])
+        assert row.state == "pending"
+        row.expires_at = utc_now() - timedelta(seconds=1)
+        session.add(row)
+        session.commit()
+    assert "yandex_expired" in yandex_finish(client, params).headers["location"]
+    params = yandex_start(client, headers)
+    assert "yandex_denied" in yandex_finish(client, params, error="access_denied").headers["location"]
+    assert client.get("/api/auth/me").status_code == 401
+    params = yandex_start(client, headers)
+    monkeypatch.setattr(module, "_profile", lambda *args: (_ for _ in ()).throw(ValueError("provider failed")))
+    assert "yandex_unavailable" in yandex_finish(client, params).headers["location"]
+
+
+def test_yandex_link_preserves_owner_and_rejects_collision(auth_app, monkeypatch):
+    from app.models import LoginSession
+    app, engine = auth_app
+    yandex_setup(app, monkeypatch, "90003")
+    owner, headers = browser(app)
+    complete_login(app, owner, headers, 90901, "Original Owner", 9100)
+    user_id = owner.get("/api/auth/me").json()["id"]
+    params = yandex_start(owner, headers, purpose="link")
+    assert yandex_finish(owner, params).headers["location"] == "/account?tab=security"
+    assert set(owner.get("/api/auth/me").json()["providers"]) == {"telegram", "yandex"}
+    assert owner.get("/api/auth/me").json()["display_name"] == "Original Owner"
+    stranger, stranger_headers = browser(app)
+    complete_login(app, stranger, stranger_headers, 90902, "Other", 9200)
+    assert "yandex_conflict" in yandex_finish(stranger, yandex_start(stranger, stranger_headers, purpose="link")).headers["location"]
+    with Session(engine) as session:
+        login = session.get(LoginSession, owner.get("/api/auth/me").json()["session_id"])
+        login.created_at = utc_now() - timedelta(minutes=6)
+        session.add(login)
+        session.commit()
+    assert owner.post("/api/auth/yandex/start", json={"purpose": "link"}, headers=headers).status_code == 428
+    owner.post("/api/auth/logout", headers=headers)
+    assert yandex_finish(owner, yandex_start(owner, headers)).status_code == 303
+    assert owner.get("/api/auth/me").json()["id"] == user_id
+    assert owner.get("/api/reels").json() != {"detail": "Требуется вход"}
+
+
+def test_yandex_exchange_uses_header_and_verifier_and_checks_client(monkeypatch):
+    from app import yandex_auth as module
+    seen = []
+    def provider(request):
+        seen.append(request)
+        return {"access_token": "private-token"} if len(seen) == 1 else {"id": "42", "client_id": "client", "display_name": "Name"}
+    monkeypatch.setattr(module, "_json", provider)
+    assert module._profile("code", "verifier", Settings(yandex_client_id="client"))["id"] == "42"
+    assert b"code_verifier=verifier" in seen[0].data
+    assert "private-token" not in seen[1].full_url
+    assert seen[1].get_header("Authorization") == "OAuth private-token"
+    seen.clear()
+    with pytest.raises(ValueError):
+        module._profile("code", "verifier", Settings(yandex_client_id="other"))
+
+
+@pytest.mark.skipif(not os.getenv("AUTH_PG_TEST_URL"), reason="PostgreSQL OAuth concurrency")
+def test_yandex_parallel_callback_creates_one_identity_and_rejects_replay(auth_app, monkeypatch):
+    app, engine = auth_app
+    yandex_setup(app, monkeypatch, "90099")
+    first, headers = browser(app)
+    second, other_headers = browser(app)
+    params = yandex_start(first, headers)
+    other = yandex_start(second, other_headers)
+    def finish(pair):
+        client, query = pair
+        clone = TestClient(app, base_url="https://testserver", cookies=dict(client.cookies))
+        return yandex_finish(clone, query).headers["location"]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(finish, [(first, params), (first, params), (second, other)]))
+    assert results.count("/today") == 2
+    assert sum("auth_error" in path for path in results) == 1
+    with Session(engine) as session:
+        identities = session.exec(select(AuthIdentity).where(AuthIdentity.provider == "yandex", AuthIdentity.provider_subject == "90099")).all()
+        assert len(identities) == 1
+
+
 @pytest.mark.skipif(not os.getenv("AUTH_PG_TEST_URL"), reason="PostgreSQL row-lock race test")
 def test_parallel_finish_is_single_use_and_registration_is_unique(auth_app):
     app, engine = auth_app

@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     auth_challenge_minutes: int = 5
     auth_session_days: int = 30
     auth_idle_days: int = 7
+    yandex_client_id: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

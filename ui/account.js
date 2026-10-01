@@ -16,9 +16,9 @@ function scriptIllustration() {
 }
 
 function futureSignInButtons() {
-  return `<div class="future-sign-in" aria-label="Другие способы входа, скоро">
-    <span class="auth-divider">Позже появятся</span>
-    <button class="button future-method" type="button" disabled><img class="yandex-logo" src="/assets/yandex-logo.svg" width="24" height="24" alt="" />Войти через Яндекс<span class="soon-label">Скоро</span></button>
+  return `<div class="future-sign-in" aria-label="Другие способы входа">
+    <span class="auth-divider">Другие способы входа</span>
+    <button class="button ${state.authProviders?.yandex?'secondary':'future-method'}" type="button" data-action="begin-yandex" ${!state.authProviders?.yandex||state.authBusy?'disabled':''}><img class="yandex-logo" src="/assets/yandex-logo.svg" width="24" height="24" alt="" />Войти через Яндекс${state.authProviders?.yandex?'':'<span class="soon-label">Скоро</span>'}</button>
     <button class="button future-method" type="button" disabled>${icon("envelope-simple")}Войти по почте с кодом<span class="soon-label">Скоро</span></button>
   </div>`;
 }
@@ -32,8 +32,8 @@ function loginPage() {
   const botWebURL=challenge?`https://web.telegram.org/k/#@${encodeURIComponent(botName)}`:"";
   return `<main id="main-content" class="auth-layout"><section class="auth-entry">${publicBrand()}
     <div class="auth-content"><h1>${challenge?"Один шаг до входа":"Вход за пару секунд"}</h1>
-    <p class="auth-description">${challenge?"Подтвердите запрос в Telegram и вернитесь в этот браузер.":"Без пароля. Подтвердите вход в Telegram. Для первого входа создадим аккаунт автоматически."}</p>
-    ${state.authError?`<p class="form-error auth-error" role="alert">${escapeHtml(state.authError)}</p>`:""}
+    <p class="auth-description">${challenge?"Подтвердите запрос в Telegram и вернитесь в этот браузер.":"Без пароля. Выберите удобный способ входа. Для первого входа создадим аккаунт автоматически."}</p>
+    ${state.authError||oauthError()?`<p class="form-error auth-error" role="alert">${escapeHtml(state.authError||oauthError())}</p>`:""}
     ${challenge?`<div class="auth-step">
       <p class="auth-state" role="status">${escapeHtml(label)}</p>
       ${active?`<span class="auth-code-label">Ваш одноразовый код</span><strong class="auth-code">${escapeHtml(challenge.code)}</strong>
@@ -82,15 +82,16 @@ function accountDetails() {
       <div class="account-photo-row">${userAvatar()}<div><div class="account-photo-actions"><label class="button secondary compact photo-picker ${state.photoBusy?'busy':''}"><input class="visually-hidden" type="file" accept="image/jpeg,image/png" data-profile-photo aria-label="Загрузить фото профиля" ${state.photoBusy?'disabled':''} />${icon("camera")}${state.photoBusy?"Загружаем…":"Изменить фото"}</label>${state.user.avatar_path?`<button class="text-link" type="button" data-action="remove-avatar" ${state.photoBusy?'disabled':''}>Убрать</button>`:""}</div><p>JPG или PNG, до 2 МБ</p></div></div>
       <div class="account-fields"><label for="profile-name">Имя<input id="profile-name" name="display_name" autocomplete="name" maxlength="80" required value="${escapeHtml(state.profileName??state.user.display_name)}" ${state.profileBusy?'disabled':''} /></label>
       <label for="profile-email">Email <span class="field-hint">${state.user.email?"Подтверждён":"Не подключён"}</span><input id="profile-email" type="text" readonly value="${escapeHtml(state.user.email||"Появится после подключения почты")}" aria-describedby="email-note" /></label></div>
-      <p class="account-note" id="email-note">${icon("info")}Сейчас для входа используется Telegram. Подключение почты появится позже.</p>
+      <p class="account-note" id="email-note">${icon("info")}Способы входа находятся в разделе «Вход и безопасность». Подключение почты появится позже.</p>
       <div class="account-form-footer"><p class="${state.profileError?'form-error':'profile-save-state'}" data-profile-message role="status">${escapeHtml(state.profileError||state.profileSaved||"")}</p><button class="button primary" type="submit" ${state.profileBusy?'disabled':''}>${state.profileBusy?"Сохраняем…":"Сохранить изменения"}</button></div>
     </form></section>`;
 }
 
 function accountSecurity() {
   return `<section class="account-panel">${accountHeading("Способы входа","Вход без пароля. Ваши материалы связаны с одним аккаунтом.","lock-key")}
-    <div class="identity-row"><span class="identity-icon">${icon("telegram-logo")}</span><div><strong>Telegram</strong><p>${state.user.telegram_username?'@'+escapeHtml(state.user.telegram_username):"Ваш подтверждённый аккаунт"}</p></div><span class="identity-connected">${icon("check-circle")}Подключён</span></div>
-    <div class="identity-row future"><span class="identity-icon"><img class="yandex-logo" src="/assets/yandex-logo.svg" width="24" height="24" alt="" /></span><div><strong>Яндекс ID</strong><p>Вход через аккаунт Яндекса</p></div><button type="button" class="button secondary compact" disabled>Скоро</button></div>
+    ${oauthError()?`<p class="form-error" role="alert">${escapeHtml(oauthError())}</p>`:''}
+    <div class="identity-row"><span class="identity-icon">${icon("telegram-logo")}</span><div><strong>Telegram</strong><p>${state.user.telegram_username?'@'+escapeHtml(state.user.telegram_username):"Вход через Telegram"}</p></div><span class="identity-connected">${state.user.providers?.includes('telegram')?icon("check-circle")+'Подключён':'Не подключён'}</span></div>
+    <div class="identity-row"><span class="identity-icon"><img class="yandex-logo" src="/assets/yandex-logo.svg" width="24" height="24" alt="" /></span><div><strong>Яндекс ID</strong><p>Вход через аккаунт Яндекса</p></div>${state.user.providers?.includes('yandex')?`<span class="identity-connected">${icon("check-circle")}Подключён</span>`:`<button type="button" class="button secondary compact" data-action="link-yandex" ${state.authProviders?.yandex?'':'disabled'}>${state.authProviders?.yandex?'Подключить':'Скоро'}</button>`}</div>
     <div class="identity-row future"><span class="identity-icon">${icon("envelope-simple")}</span><div><strong>Email</strong><p>Код на российскую почту</p></div><button type="button" class="button secondary compact" disabled>Скоро</button></div>
     </section><section class="account-panel">${accountHeading("Активные сеансы","Завершите сеанс, если больше не используете устройство.","devices")}
     <div class="account-sessions">${state.sessions.map(s=>`<div class="account-session"><span class="session-icon">${icon(/Android|iPhone|iPad/.test(s.user_agent)?"device-mobile":"desktop")}</span><div class="session-copy"><strong>${escapeHtml(sessionDevice(s.user_agent))}</strong><p>${s.current?'Это устройство':`Активность ${formatDateTime(s.last_seen_at)}`}</p></div>${s.current?'<span class="current-session">Текущий</span>':`<button type="button" class="button secondary compact" data-action="revoke-session" data-session-id="${s.id}">Завершить</button>`}</div>`).join("")||'<p class="muted">Нет активных сеансов.</p>'}</div>

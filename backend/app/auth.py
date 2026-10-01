@@ -256,7 +256,9 @@ def csrf(request: Request, response: Response, settings: Settings = Depends(get_
     _configured(settings)
     # Tabs share cookies. Rotating on every bootstrap breaks mutations in older tabs.
     token = request.cookies.get(CSRF_COOKIE, "")
-    return {"csrf_token": token if _valid_csrf(token, settings) else issue_csrf(response, settings)}
+    from .yandex_auth import configured as yandex_configured
+    return {"csrf_token": token if _valid_csrf(token, settings) else issue_csrf(response, settings),
+            "providers": {"telegram": True, "yandex": yandex_configured(settings)}}
 
 
 @router.post("/telegram/start")

@@ -197,6 +197,7 @@ app.addEventListener("click",async event=>{
     if(target.matches("[data-route]")){if(event.ctrlKey||event.metaKey||event.shiftKey)return;event.preventDefault();await navigate(target.href);return;}
     if(!state.user){
       if(target.dataset.action==="begin-telegram"||target.dataset.action==="restart-login")await beginTelegramLogin();
+      if(target.dataset.action==="begin-yandex")await beginYandexLogin();
       if(target.dataset.action==="copy-telegram-command"){
         const field=app.querySelector("#telegram-start-command");
         if(field){try{await navigator.clipboard.writeText(field.value);showToast("Команда скопирована. Отправьте её боту в Telegram.");}catch{field.focus();field.select();showToast("Скопируйте выделенную команду и отправьте её боту.");}}
@@ -211,6 +212,7 @@ app.addEventListener("click",async event=>{
     if(target.dataset.planFormatTab){state.planFormat=target.dataset.planFormatTab;history.replaceState({},"",planURL());render();return;}
     if(target.dataset.importPlatformTab){state.importPlatform=target.dataset.importPlatformTab;render();return;}
     const action=target.dataset.action;
+    if(action==="link-yandex"){await beginYandexLogin("link");return;}
     if(action==="toggle-nav"||action==="close-nav"){state.mobileNav=action==="toggle-nav"?!state.mobileNav:false;render();}
     else if(action==="logout"||action==="logout-all"){
       await apiRequest(action==="logout"?"/auth/logout":"/auth/logout-all",{method:"POST"});
@@ -340,6 +342,20 @@ async function beginTelegramLogin(){
   }catch(e){if(attempt===loginAttempt){state.authError=e.message;render();}}
   finally{if(attempt===loginAttempt){state.authBusy=false;render();}}
 }
+async function beginYandexLogin(purpose="login"){
+  if(state.authBusy)return;
+  const attempt=++loginAttempt, userId=state.user?.id;
+  state.authBusy=true;state.authError="";render();
+  try{
+    const result=await apiRequest("/auth/yandex/start",{method:"POST",body:JSON.stringify({purpose,return_to:loginReturnPath(new URLSearchParams(location.search).get("return_to"))})});
+    if(attempt!==loginAttempt||state.user?.id!==userId||(purpose==="login"&&state.route!=="/login"))return;
+    location.assign(result.authorize_url);
+  }catch(error){state.authError=error.message;if(purpose==="link")showToast(error.message,"error");}
+  finally{state.authBusy=false;render();}
+}
+function oauthError(){
+  return ({yandex_invalid:"Запрос входа недействителен. Начните вход заново в этом браузере.",yandex_expired:"Время запроса истекло. Начните вход заново.",yandex_denied:"Вход через Яндекс отменён. Вы можете попробовать снова.",yandex_unavailable:"Не удалось получить ответ Яндекса. Попробуйте войти ещё раз.",yandex_conflict:"Этот Яндекс ID уже связан с другим аккаунтом, либо у вас уже подключён другой Яндекс ID.",yandex_disabled:"Аккаунт недоступен. Обратитесь в поддержку."})[new URLSearchParams(location.search).get("auth_error")]||"";
+}
 async function pollTelegramLogin(){
   clearTimeout(authPollTimer);
   const challenge=state.authChallenge;if(!challenge||state.user||state.route!=="/login")return;
@@ -367,7 +383,7 @@ async function pollTelegramLogin(){
 }
 async function bootstrap(){
   try{
-    const csrf=await apiRequest("/auth/csrf");state.csrf=csrf.csrf_token;
+    const csrf=await apiRequest("/auth/csrf");state.csrf=csrf.csrf_token;state.authProviders=csrf.providers||{};
     let user;
     try{user=await apiRequest("/auth/me");}catch(e){if(e.status===401){clearAccountMemory();routeAccess();render();return;}throw e;}
     try{const previous=sessionStorage.getItem("auth-user-id");if(previous&&previous!==String(user.id))clearAccountMemory();sessionStorage.setItem("auth-user-id",String(user.id));}catch{}

@@ -10,6 +10,7 @@ from .auth import SESSION_COOKIE, _session_for_token, router as auth_router, sta
 from .config import get_settings
 from .database import engine
 from .models import Competitor, Reel, User
+from .yandex_auth import router as yandex_router
 
 
 settings = get_settings()
@@ -43,6 +44,7 @@ async def account_boundary(request, call_next):
     public = path == "/api/health" or path == "/api/auth/csrf" or path in {
         "/api/auth/telegram/start", "/api/auth/telegram/status", "/api/auth/telegram/finish",
         "/api/telegram/webhook",
+        "/api/auth/yandex/start", "/api/auth/yandex/callback",
     }
     if request.method not in {"GET", "HEAD", "OPTIONS"} and path != "/api/telegram/webhook":
         try:
@@ -78,4 +80,5 @@ async def account_boundary(request, call_next):
 app.include_router(router)
 app.include_router(auth_router)
 app.include_router(webhook_router)
+app.include_router(yandex_router)
 app.mount("/media", StaticFiles(directory=settings.media_root, check_dir=False), name="media")

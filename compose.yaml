@@ -50,6 +50,7 @@ services:
       AUTH_CHALLENGE_MINUTES: ${AUTH_CHALLENGE_MINUTES:-5}
       AUTH_SESSION_DAYS: ${AUTH_SESSION_DAYS:-30}
       AUTH_IDLE_DAYS: ${AUTH_IDLE_DAYS:-7}
+      YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
     expose:
       - "8000"
     volumes:
