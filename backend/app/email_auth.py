@@ -40,7 +40,9 @@ def configured(settings):
 def normalize_email(value):
     value = value.strip().lower()
     local, _, domain = value.rpartition("@")
-    if (domain not in DOMAINS or not re.fullmatch(r"[a-z0-9][a-z0-9._+\-]{0,63}", local)
+    if domain not in DOMAINS:
+        raise HTTPException(422, "Вход с этой почтой недоступен. Hype Hunter поддерживает вход по коду только с адресов российских почтовых сервисов из разрешённого списка. Используйте почту Яндекса, Mail.ru или Рамблера либо войдите через Яндекс ID или Telegram. Пароль создавать не нужно.")
+    if (not re.fullmatch(r"[a-z0-9][a-z0-9._+\-]{0,63}", local)
             or local.endswith(".") or ".." in local):
         raise HTTPException(422, "Укажите адрес Яндекс, Mail.ru или Рамблер из поддерживаемых почтовых сервисов")
     return value

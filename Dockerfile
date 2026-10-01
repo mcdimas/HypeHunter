@@ -9,6 +9,7 @@ FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY index.html styles.css app.js /usr/share/nginx/html/
 COPY ui /usr/share/nginx/html/ui
+COPY legal /usr/share/nginx/html/legal
 COPY assets/*.png assets/*.svg assets/*.webp assets/*.mp4 /usr/share/nginx/html/assets/
 COPY --from=icon-assets /app/node_modules/@phosphor-icons/web/src/regular /usr/share/nginx/html/icons/regular
 

@@ -110,7 +110,7 @@ def test_apify_import_is_capped_and_persists_reel_metadata() -> None:
         apify_token="test-token",
         apify_import_limit=20,
         apify_max_charge_usd=1.10,
-        codex_translation_auto_start=False,
+        translation_auto_start=False,
     )
     run_apify_import(
         job_id,
@@ -202,7 +202,7 @@ def test_cancelled_import_does_not_persist_late_results() -> None:
         media_root=".test-media",
         apify_token="test-token",
         apify_import_limit=20,
-        codex_translation_auto_start=False,
+        translation_auto_start=False,
     )
     run_apify_import(
         job_id,
@@ -244,7 +244,7 @@ def test_threads_import_upsert_preserves_draft_and_skips_media() -> None:
         session.add(competitor)
         session.commit()
         competitor_id = competitor.id
-    settings = Settings(database_url="sqlite://", media_root=".test-media", apify_token="test-token", codex_translation_auto_start=False)
+    settings = Settings(database_url="sqlite://", media_root=".test-media", apify_token="test-token", translation_auto_start=False)
 
     def forbidden(*args):
         raise AssertionError("Text import must not download media or request Instagram profiles")

@@ -12,12 +12,12 @@ from sqlmodel import Session, select
 
 from .apify_import import ACTIVE_IMPORT_STATUSES, run_apify_import
 from .auth import require_user_id
-from .codex_translate import (
+from .translation import (
     ACTIVE_TRANSLATION_STATUSES,
-    codex_cli_status,
     run_translation_backfill,
     translation_counts,
 )
+from .openai_client import translation_ready
 from .config import Settings, get_settings
 from .database import get_session
 from .models import AppEvent, AuthIdentity, Competitor, ImportJob, Reel, Remix, TranslationBatch
@@ -78,16 +78,13 @@ def readiness(
     )).first()
     if owner != user_id:
         raise HTTPException(404, "Страница не найдена")
-    cli_available, cli_authenticated = codex_cli_status(settings)
     return ReadinessRead(
         database="postgresql",
         apify_configured=bool(settings.apify_token),
         media_root=str(settings.media_root),
         ready_for_apify=True,
-        codex_cli_available=cli_available,
-        codex_cli_authenticated=cli_authenticated,
-        codex_model=settings.codex_model,
-        codex_reasoning_effort=settings.codex_reasoning_effort,
+        ai_configured=translation_ready(settings),
+        ai_model=settings.openai_model,
         project_timezone=settings.project_timezone,
         threads_import_configured=bool(settings.apify_token and settings.apify_threads_actor_id),
     )
@@ -629,17 +626,15 @@ def _translation_overview(session: Session, settings: Settings, user_id: int) ->
     batches = session.exec(
         select(TranslationBatch).where(TranslationBatch.user_id == user_id).order_by(TranslationBatch.created_at.desc()).limit(20)
     ).all()
-    cli_available, cli_authenticated = codex_cli_status(settings)
     active = any(batch.status in ACTIVE_TRANSLATION_STATUSES for batch in batches)
     return TranslationOverviewRead(
         summary=TranslationSummaryRead(
             **counts,
             active=active,
-            cli_available=cli_available,
-            cli_authenticated=cli_authenticated,
-            model=settings.codex_model,
-            reasoning_effort=settings.codex_reasoning_effort,
-            batch_size=settings.codex_translation_batch_size,
+            configured=translation_ready(settings),
+            model=settings.openai_model,
+            reasoning_effort="none",
+            batch_size=settings.translation_batch_size,
         ),
         batches=[TranslationBatchRead.model_validate(batch) for batch in batches],
     )
@@ -661,14 +656,8 @@ def start_translation_backfill(
     settings: Settings = Depends(get_settings),
     user_id: int = Depends(require_user_id),
 ) -> TranslationOverviewRead:
-    cli_available, cli_authenticated = codex_cli_status(settings)
-    if not cli_available:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Codex CLI не установлен на сервере")
-    if not cli_authenticated:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Codex CLI не авторизован через ChatGPT на сервере",
-        )
+    if not translation_ready(settings):
+        raise HTTPException(503, "AI-перевод пока не подключён. Исходники и ручное редактирование доступны.")
     active = session.exec(
         select(TranslationBatch.id).where(TranslationBatch.user_id == user_id, TranslationBatch.status.in_(ACTIVE_TRANSLATION_STATUSES)).limit(1)
     ).first()

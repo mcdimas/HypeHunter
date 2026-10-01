@@ -675,8 +675,8 @@ def run_apify_import(
                 status="completed",
                 details=job.result_summary,
             )
-        if settings.codex_translation_auto_start:
-            from .codex_translate import run_translation_backfill
+        if settings.translation_auto_start:
+            from .translation import run_translation_backfill
 
             try:
                 run_translation_backfill(settings_override=settings, session_factory=create_session, only_ids=imported_ids, user_id=job.user_id)

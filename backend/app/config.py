@@ -19,12 +19,16 @@ class Settings(BaseSettings):
     apify_import_limit: int = 20
     apify_max_charge_usd: float = 1.10
     apify_profile_max_charge_usd: float = 0.05
-    codex_cli_path: str = "codex"
-    codex_model: str = "gpt-5.6-sol"
-    codex_reasoning_effort: str = "medium"
-    codex_translation_batch_size: int = 10
-    codex_translation_timeout_seconds: int = 1800
-    codex_translation_auto_start: bool = True
+    openai_api_key: str = Field(default="", repr=False)
+    openai_enabled: bool = False
+    openai_model: str = "gpt-4.1"
+    openai_timeout_seconds: int = Field(default=180, ge=10, le=600)
+    openai_max_input_chars: int = Field(default=60000, ge=1000, le=120000)
+    openai_max_output_tokens: int = Field(default=16000, ge=1000, le=32000)
+    translation_batch_size: int = Field(default=5, ge=1, le=10)
+    translation_auto_start: bool = True
+    translation_user_daily_batches: int = Field(default=50, ge=1, le=1000)
+    translation_global_daily_batches: int = Field(default=200, ge=1, le=10000)
     cors_origins: str = "http://127.0.0.1:4173,http://localhost:4173"
     public_origin: str = ""
     telegram_bot_token: str = ""

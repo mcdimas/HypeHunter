@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlmodel import Session
 
-from .codex_translate import source_hash
+from .translation import source_hash
 from .database import engine
 from .models import Reel, TranslationBatch
 from .services import record_event, utc_now

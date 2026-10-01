@@ -192,8 +192,7 @@ class TranslationSummaryRead(SQLModel):
     failed: int
     eligible: int
     active: bool
-    cli_available: bool
-    cli_authenticated: bool
+    configured: bool
     model: str
     reasoning_effort: str
     batch_size: int
@@ -209,10 +208,8 @@ class ReadinessRead(SQLModel):
     apify_configured: bool
     media_root: str
     ready_for_apify: bool
-    codex_cli_available: bool
-    codex_cli_authenticated: bool
-    codex_model: str
-    codex_reasoning_effort: str
+    ai_configured: bool
+    ai_model: str
     project_timezone: str = "Europe/Moscow"
     threads_import_configured: bool = False
 

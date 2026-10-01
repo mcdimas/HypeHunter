@@ -102,7 +102,7 @@ function importRows() {
 function translationMarkup() {
   const summary = state.translations?.summary;
   if (!summary) return "";
-  return `<details class="translation-details"><summary>${icon("translate")} Переводы <span class="muted">${summary.translated} готовы${summary.failed ? ` · ${summary.failed} с ошибкой` : ""}</span></summary><p>${summary.cli_authenticated ? "Новые тексты переводятся после загрузки." : "Сервис перевода требует подключения на сервере. Оригиналы доступны, ручное редактирование работает."}</p>${(state.translations.batches || []).slice(0,5).map(b => `<details class="job-details"><summary>Пакет #${b.id}: ${b.status === "completed" ? "готов" : b.status === "failed" ? "ошибка" : "в работе"} · ${b.translated_count}/${b.item_count}</summary>${b.error_message ? `<p>${escapeHtml(translationErrorSummary(b.error_message))}</p>` : ""}</details>`).join("")}</details>`;
+  return `<details class="translation-details"><summary>${icon("translate")} Переводы <span class="muted">${summary.translated} готовы${summary.failed ? ` · ${summary.failed} с ошибкой` : ""}</span></summary><p>${summary.configured ? "Новые тексты переводятся после загрузки." : "Сервис перевода требует подключения на сервере. Оригиналы доступны, ручное редактирование работает."}</p>${(state.translations.batches || []).slice(0,5).map(b => `<details class="job-details"><summary>Пакет #${b.id}: ${b.status === "completed" ? "готов" : b.status === "failed" ? "ошибка" : "в работе"} · ${b.translated_count}/${b.item_count}</summary>${b.error_message ? `<p>${escapeHtml(translationErrorSummary(b.error_message))}</p>` : ""}</details>`).join("")}</details>`;
 }
 
 function competitorsPage() {

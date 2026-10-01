@@ -46,6 +46,7 @@ function loginPage() {
         </details>`:`<p class="muted">Код больше не действует. Создайте новый запрос.</p>`}
       <button class="auth-restart" type="button" data-action="restart-login">Начать заново</button>
     </div>`:`<button class="button primary auth-primary" type="button" data-action="begin-telegram" ${state.authBusy?"disabled":""}>${icon("telegram-logo")}${state.authBusy?"Создаём запрос…":"Продолжить через Telegram"}</button>${futureSignInButtons()}`}
+    <p class="auth-legal">Начиная пользоваться сервисом, вы принимаете <a href="/legal/offer/" target="_blank" rel="noopener">условия использования</a>. О том, как мы обрабатываем данные, — в <a href="/legal/privacy/" target="_blank" rel="noopener">политике обработки персональных данных</a>.</p>
     </div><a class="auth-back" href="/" data-route>${icon("arrow-left")}На главную</a>
   </section>${scriptIllustration()}</main>`;
 }

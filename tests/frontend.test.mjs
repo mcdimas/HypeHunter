@@ -30,6 +30,23 @@ function appContext() {
 const response = data => ({ ok: true, status: 200, json: async () => data });
 const deferred = () => { let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve}; };
 
+test("legal links are public documents and auth errors remain accessible and escaped", () => {
+  const c=appContext();
+  c.run('state.emailLogin={email:"test@gmail.com"};state.authError="Вход с этой почтой недоступен. <script>"');
+  const html=c.run("loginPage()");
+  assert.match(html,/role="alert"/);
+  assert.match(html,/&lt;script&gt;/);
+  assert.match(html,/href="\/legal\/offer\/"/);
+  assert.match(html,/href="\/legal\/privacy\/"/);
+  for(const name of ["offer","privacy"]){
+    const page=readFileSync(new URL(`../legal/${name}/index.html`,import.meta.url),"utf8");
+    assert.match(page,/hypehunter.ru/);
+    assert.match(page,/772460063060/);
+    assert.match(page,/<main id="main-content"/);
+    assert.doesNotMatch(page,/<script/);
+  }
+});
+
 test("shared illustration has no caption; Yandex uses a local SVG in both places", () => {
   const c=appContext();
   c.run('state.user={id:1,display_name:"Owner"}');
