@@ -1,0 +1,38 @@
+/* Real light palette; images and videos keep their original colours. */
+:root[data-theme=light]{color-scheme:light;--bg:#f7f7fb;--sidebar:#fff;--surface:#fff;--raised:#ededf4;--border:#dcdce8;--text:#20202e;--muted:#626274;--accent:#7054e8;--link:#6044cf;--danger:#c8334b;--green:#15805d}
+[data-theme=light] .panel,[data-theme=light] .reels-grid .library-item,[data-theme=light] .threads-grid .library-item{background:var(--surface)}
+[data-theme=light] .nav-link,[data-theme=light] .page-header p:not(.eyebrow),[data-theme=light] .source-excerpt,[data-theme=light] .source-stats,[data-theme=light] .source-stats b,[data-theme=light] .material-cell .russian-preview>span,[data-theme=light] .dialog-panel>p{color:var(--muted)}
+[data-theme=light] .nav-link.active{background:#eee8ff;color:var(--link)}
+[data-theme=light] .reels-list,[data-theme=light] .account-panel,[data-theme=light] .landing-footer,[data-theme=light] .landing-example-toolbar,[data-theme=light] .menu-popover{background:var(--surface)}
+[data-theme=light] .library-table-head,[data-theme=light] .landing-format-tabs button[aria-selected=true],[data-theme=light] .menu-popover button:hover,[data-theme=light] .menu-popover a:hover,[data-theme=light] .sidebar-foot a:hover{background:var(--raised);color:var(--text)}
+[data-theme=light] .landing-header{background:#fffffff2}
+[data-theme=light] .reel-thumb,[data-theme=light] .landing-example-source{background:var(--raised)}
+[data-theme=light] .status.ready,[data-theme=light] .translation-label.completed,[data-theme=light] .identity-connected{background:#e6f5ee;color:var(--green)}
+[data-theme=light] .status.failed,[data-theme=light] .translation-label.failed{background:#fbe8ec;color:var(--danger)}
+[data-theme=light] .status.pending{background:#eee8ff;color:var(--link)}
+[data-theme=light] .account-danger{background:#fff0f2}
+[data-theme=light] :is(.auth-layout,.auth-entry,.command-field,.workflow-profile,.workflow-draft,.workflow-steps>button,.workflow-edit textarea,.workflow-thread,.editor-grid>section,.threads-panel textarea,.account-id-strip,.resume-panel,.plan-card,.calendar-day,.import-card){background:var(--surface);border-color:var(--border)}
+[data-theme=light] :is(.account-fields input,.email-login-form input,.account-fields input[readonly],.editor-field textarea,.status-select,.translation-pair .original-text,.workflow-number,.workflow-source-icon,.account-section-icon,.account-id,.kanban-column,.workflow-insight){background:var(--raised);border-color:var(--border);color:var(--text)}
+[data-theme=light] :is(.account-panel,.search-field,.view-switch,.menu-popover,.landing-example,.board-hint){border-color:var(--border)}
+[data-theme=light] :is(.account-note,.identity-icon,.session-icon,.auth-divider,.soon-label,.example-label,.example-copy>p,.example-original p,.work-icon,.work-row time,.text-cover,.plan-meta .format-label,.plan-meta time,.plan-excerpt,.plan-date,.source-reference,.original-text,.tab,.data-table th,.landing-original>p,.landing-price-card li,.landing-legal>a,.landing-footer-links>a,.landing-footer-links>span,.workflow-formats,.workflow-panel .workflow-note,.workflow-real-metrics){color:var(--muted)}
+[data-theme=light] :is(.example-original,.example-script,.landing-thread-source,.landing-price-card.featured,.landing-final){background:var(--surface);border-color:var(--border)}
+[data-theme=light] :is(.landing-thread-source p,.workflow-profile-text,.workflow-rewrite .workflow-typed-hook,.workflow-comparison-row strong){color:var(--text)}
+[data-theme=light] :is(.workflow-steps>button[aria-selected=true],.workflow-steps>button:hover,.workflow-steps>button[aria-selected=true] .workflow-number,.calendar-add:hover){background:#eee8ff;border-color:#d8cdfa;color:var(--link)}
+[data-theme=light] :is(.landing-example-cta p,.example-cta p,.workflow-plan-lanes .active,.resume-panel .eyebrow,.landing-plan-title>span){color:var(--link)}
+[data-theme=light] .landing-cost-product>span,[data-theme=light] .landing-cost-product strong{color:var(--link)!important}
+[data-theme=light] .auth-error{background:#fff0f2;color:var(--danger);border-color:#f1b8c2}
+[data-theme=light] .current-session{background:#e6f5ee;color:var(--green)}
+[data-theme=light] .stage-pill{background:#e4efff;color:#2b5a9a}
+[data-theme=light] .stage-pill.filming{background:#eee8ff;color:#6044cf}
+[data-theme=light] .stage-pill.editing,[data-theme=light] .stage-pill.text{background:#fff0df;color:#8b4813}
+[data-theme=light] .status-select.idea{color:var(--danger)}
+[data-theme=light] .status-select.in_progress{color:#2b5a9a}
+[data-theme=light] .kanban-column.in_progress h2{color:#2b5a9a}
+[data-theme=light] .kanban-column.ready h2,[data-theme=light] .kanban-column.published h2,[data-theme=light] .workflow-ready{color:var(--green)}
+[data-theme=light] .legal-page h2{color:var(--text)}
+[data-theme=light] .legal-page section{color:var(--muted)}
+[data-theme=light] body{background:var(--bg);color:var(--text)}
+[data-theme=light] :is(.legal-header a,.legal-footer a,.legal-page a,.legal-kicker){color:var(--link)}
+[data-theme=light] .legal-brand{color:var(--text)!important}
+[data-theme=light] :is(.legal-lead,.legal-date,.legal-footer){color:var(--muted)}
+[data-theme=light] .legal-nav [aria-current]{color:var(--text)}

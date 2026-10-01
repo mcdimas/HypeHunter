@@ -15,7 +15,54 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.config import Settings, get_settings
 from app.database import get_session
 from app.models import AuthChallenge, AuthIdentity, Competitor, ImportJob, Reel, TelegramUpdate, TranslationBatch, User, utc_now
-from app.models import EmailChallenge, AuthRateLimit, LoginSession
+from app.models import EmailChallenge, AuthRateLimit, LoginSession, Remix
+
+
+def test_preferences_and_workspace_clear_are_isolated(auth_app):
+    app, engine = auth_app
+    first, headers = browser(app)
+    complete_login(app, first, headers, 918221, "Settings tester", 9182210)
+    uid = first.get("/api/auth/me").json()["id"]
+    second, other_headers = browser(app)
+    complete_login(app, second, other_headers, 918222, "Other tester", 9182220)
+    other = second.get("/api/auth/me").json()["id"]
+    defaults = first.get("/api/auth/preferences").json()
+    prefs = {**defaults, "scenario_tone": "bold", "brand_name": "My brand", "notifications_weekly": True}
+    assert first.put("/api/auth/preferences", json=prefs).status_code == 403
+    assert first.put("/api/auth/preferences", json=prefs, headers=headers).json() == prefs
+    assert first.get("/api/auth/preferences").json() == prefs
+    assert second.get("/api/auth/preferences").json() == defaults
+    assert first.put("/api/auth/preferences", json={**prefs, "scenario_tone": "invalid"}, headers=headers).status_code == 422
+    with Session(engine) as db:
+        user = db.get(User, uid)
+        user.trial_reels_used = 5
+        db.add(user)
+        own = Competitor(user_id=uid, handle="@settings1", profile_url="https://instagram.com/settings1")
+        foreign = Competitor(user_id=other, handle="@settings2", profile_url="https://instagram.com/settings2")
+        db.add(own); db.add(foreign); db.flush()
+        db.add(Reel(user_id=uid, competitor_id=own.id, external_id="settings-own", title="Own", hook="Own", author="@settings1"))
+        db.add(Reel(user_id=other, competitor_id=foreign.id, external_id="settings-other", title="Other", hook="Other", author="@settings2"))
+        db.flush()
+        source = db.exec(select(Reel).where(Reel.user_id == uid)).first()
+        db.add(Remix(user_id=uid, source_reel_id=source.id, slug="settings-clear-own", title="Own draft"))
+        db.add(Remix(user_id=other, slug="settings-clear-other", title="Other draft"))
+        job = ImportJob(user_id=uid, competitor_id=own.id, status="queued")
+        db.add(job); db.commit(); job_id = job.id
+    request = lambda confirmation: first.request("DELETE", "/api/workspace", json={"confirmation": confirmation}, headers=headers)
+    assert request("wrong").status_code == 422
+    assert request("УДАЛИТЬ").status_code == 409
+    with Session(engine) as db:
+        job = db.get(ImportJob, job_id); job.status = "completed"; db.add(job); db.commit()
+    assert request("УДАЛИТЬ").status_code == 200
+    assert first.get("/api/competitors").json() == []
+    assert first.get("/api/reels").json()["total"] == 0
+    assert first.get("/api/remixes").json() == []
+    assert first.get("/api/trial").json() == {"limit": 5, "used": 5, "remaining": 0}
+    assert first.get("/api/auth/me").json()["id"] == uid
+    assert first.get("/api/auth/preferences").json() == prefs
+    assert len(second.get("/api/competitors").json()) == 1
+    assert second.get("/api/reels").json()["total"] == 1
+    assert len(second.get("/api/remixes").json()) == 1
 
 
 def email_setup(app, monkeypatch):

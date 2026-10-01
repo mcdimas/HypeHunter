@@ -14,6 +14,7 @@ class User(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     display_name: str = Field(default="", max_length=255)
     name_edited: bool = Field(default=False)
+    preferences: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     trial_reels_limit: int | None = Field(default=5, sa_column=Column(Integer().evaluates_none(), nullable=True, default=5))
     trial_reels_used: int = Field(default=0)
     avatar_path: str | None = Field(default=None, max_length=1024)

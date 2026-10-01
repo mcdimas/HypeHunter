@@ -11,6 +11,7 @@ import re
 import secrets
 import threading
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
@@ -52,6 +53,34 @@ class ProfileUpdate(BaseModel):
         if not value or any(ord(char) < 32 for char in value):
             raise ValueError("Введите имя")
         return value
+
+
+class AccountPreferences(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scenario_tone: Literal["neutral", "conversational", "bold"] = "conversational"
+    hook_length: Literal["short", "medium", "long"] = "medium"
+    use_personal_cta: bool = False
+    brand_name: str = Field(default="", max_length=80)
+    offer: str = Field(default="", max_length=500)
+    notifications_new_ideas: bool = False
+    notifications_reminder: bool = False
+    notifications_weekly: bool = False
+
+
+@router.get("/preferences", response_model=AccountPreferences)
+def account_preferences(request: Request, session: Session = Depends(get_session)):
+    user = session.get(User, require_user_id(request))
+    return AccountPreferences.model_validate(user.preferences)
+
+
+@router.put("/preferences", response_model=AccountPreferences)
+def save_account_preferences(payload: AccountPreferences, request: Request, session: Session = Depends(get_session)):
+    user = session.exec(select(User).where(User.id == require_user_id(request)).with_for_update()).one()
+    user.preferences = payload.model_dump()
+    user.updated_at = utc_now()
+    session.add(user)
+    session.commit()
+    return payload
 
 
 def _configured(settings: Settings) -> None:

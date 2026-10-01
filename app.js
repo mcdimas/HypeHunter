@@ -15,7 +15,7 @@ function cancelledRequest() { return new DOMException("", "AbortError"); }
 function restoredReturnPath() { try { const id=sessionStorage.getItem("auth-user-id"), value=sessionStorage.getItem(`editor-return:${id}`); return value && /^\/(library|content-plan)(\?|$)/.test(value) ? value : "/content-plan"; } catch { return "/content-plan"; } }
 function recoveryKey(slug) { return `draft:${state.user?.id}:${slug}`; }
 function clearAccountMemory() {
-  state.emailLogin=null;state.trial=null;
+  state.emailLogin=null;state.trial=null;state.preferences=null;state.accountMenuOpen=false;
   clearTimeout(importPollTimer);clearTimeout(authPollTimer);clearTimeout(draftTimer);clearTimeout(searchTimer);
   accountVersion++;requestId++;routeRequestId++;loginAttempt++;
   toastRegion.replaceChildren();
@@ -66,7 +66,7 @@ function readRouteQuery() {
   if(state.route==="/content-plan"){state.planView=p.get("view")==="calendar"?"calendar":"board";state.planFormat=["reels","threads"].includes(p.get("format"))?p.get("format"):"all";state.planQuery=p.get("q")||"";const week=p.get("week");state.calendarWeek=week && /^\d{4}-\d{2}-\d{2}$/.test(week) && !Number.isNaN(Date.parse(week))?weekStart(week):weekStart();}
 }
 function navLink(path,label,i) { return `<a href="${path}" class="nav-link ${(state.route.startsWith("/remixes/")?new URL(state.editorReturn,location.origin).pathname:state.route)===path.split("?")[0]?"active":""}" data-route>${icon(i)}${label}</a>`; }
-function sidebar() { return `<button class="mobile-overlay" data-action="close-nav" aria-label="Закрыть навигацию"></button><aside class="sidebar" ${matchMedia("(max-width:680px)").matches&&!state.mobileNav?"inert":""}><a class="brand" href="/today" data-route><span class="brand-mark">${icon("target")}</span>HYPE HUNTER</a><p class="studio-label">Моя студия</p><nav aria-label="Основная навигация">${navLink("/today","Сегодня","house")}${navLink(libraryURL(),"Библиотека","video")}${navLink("/content-plan","Контент-план","calendar-blank")}<span class="nav-label">Источники</span>${navLink("/competitors","Конкуренты","users")}</nav><div class="sidebar-foot"><a href="/account" data-route aria-label="Профиль: ${escapeHtml(state.user?.display_name||"Аккаунт")}" ${state.route==="/account"?'aria-current="page"':''}>${userAvatar("sidebar-avatar")}<span>${escapeHtml(state.user?.display_name||"Аккаунт")}<small>Личный кабинет</small></span>${icon("caret-right")}</a></div></aside>`; }
+function sidebar() { return `<button class="mobile-overlay" data-action="close-nav" aria-label="Закрыть навигацию"></button><aside class="sidebar" ${matchMedia("(max-width:680px)").matches&&!state.mobileNav?"inert":""}><a class="brand" href="/today" data-route><span class="brand-mark">${icon("target")}</span>HYPE HUNTER</a><p class="studio-label">Моя студия</p><nav aria-label="Основная навигация">${navLink("/today","Сегодня","house")}${navLink(libraryURL(),"Библиотека","video")}${navLink("/content-plan","Контент-план","calendar-blank")}<span class="nav-label">Источники</span>${navLink("/competitors","Конкуренты","users")}</nav><div class="sidebar-foot"><div class="account-menu" ${state.accountMenuOpen?'':'hidden'}><a href="/account" data-route>Профиль</a><a href="/account?tab=subscription" data-route>Подписка</a><button type="button" data-theme="toggle">${icon('sun')}Сменить тему</button><button type="button" data-action="logout">${icon('sign-out')}Выйти</button></div><button class="account-menu-trigger" type="button" data-action="account-menu" aria-expanded="${!!state.accountMenuOpen}">${userAvatar("sidebar-avatar")}<span>${escapeHtml(state.user?.display_name||"Аккаунт")}<small>${state.trial?.limit===null?'Ранний доступ':'Бесплатный'}</small></span>${icon("caret-up")}</button></div></aside>`; }
 function dialogMarkup() {
   const d=state.dialog; if(!d)return"";
   return `<div class="dialog-backdrop"><section class="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><button class="icon-button dialog-close" data-action="close-dialog" aria-label="Закрыть">${icon("x")}</button><h2 id="dialog-title">${escapeHtml(d.title)}</h2><p class="dialog-text">${escapeHtml(d.text)}</p><div class="dialog-actions"><button class="button secondary" data-action="close-dialog">${d.confirmAction?"Отмена":"Закрыть"}</button>${d.confirmAction?`<button class="button ${d.destructive?"danger":"primary"}" data-action="${d.confirmAction}">${escapeHtml(d.confirmLabel||"Подтвердить")}</button>`:""}</div></section></div>`;
@@ -114,7 +114,7 @@ async function loadRouteData(){
   routeAccess();
   if(state.route!=="/login"){loginAttempt++;clearTimeout(authPollTimer);state.authChallenge=null;state.emailLogin=null;state.authStatus="";state.authBusy=false;}
   if(state.route==="/"||!state.user){render();return;}
-  if(state.route==="/account"){const sessions=await apiRequest("/auth/sessions");if(id!==routeRequestId)return;state.sessions=sessions;render();}
+  if(state.route==="/account"){const [sessions,preferences,trial]=await Promise.all([apiRequest("/auth/sessions"),apiRequest("/auth/preferences"),apiRequest("/trial")]);if(id!==routeRequestId)return;state.sessions=sessions;state.preferences=preferences;state.trial=trial;render();}
   else if(state.route==="/library")await loadReels();
   else if(state.route==="/competitors"){await Promise.all([loadCompetitors(),loadImports(),loadTranslations()]);if(id!==routeRequestId)return;render();scheduleImportPolling();}
   else if(state.route==="/content-plan"){await loadRemixes();if(id!==routeRequestId)return;render();}
@@ -195,7 +195,8 @@ async function editorOperation(operation){
 app.addEventListener("click",async event=>{
   const target=event.target.closest("button,a");if(!target)return;
   try{
-    if(target.matches("[data-route]")){if(event.ctrlKey||event.metaKey||event.shiftKey)return;event.preventDefault();await navigate(target.href);return;}
+    if(target.matches("[data-route]")){if(event.ctrlKey||event.metaKey||event.shiftKey)return;event.preventDefault();state.accountMenuOpen=false;await navigate(target.href);return;}
+    if(target.dataset.action==="account-menu"){state.accountMenuOpen=!state.accountMenuOpen;app.querySelector('.account-menu').hidden=!state.accountMenuOpen;target.setAttribute('aria-expanded',String(state.accountMenuOpen));return;}
     if(!state.user){
       if(target.dataset.action==="begin-telegram"||target.dataset.action==="restart-login")await beginTelegramLogin();
       if(target.dataset.action==="begin-yandex")await beginYandexLogin();
@@ -303,6 +304,8 @@ app.addEventListener("change",async event=>{
 app.addEventListener("submit",async event=>{
   if(event.target.matches("[data-email-form]")){event.preventDefault();await submitEmailLogin(event.target);return;}
   if(event.target.matches("[data-profile-form]")){event.preventDefault();await saveProfile();return;}
+  if(event.target.matches("[data-preferences-form]")){event.preventDefault();await savePreferences(event.target);return;}
+  if(event.target.matches("[data-clear-workspace-form]")){event.preventDefault();await clearWorkspace(event.target);return;}
   if(!event.target.matches("[data-competitor-form]"))return;event.preventDefault();
   state.importing=true;state.competitorError="";render();
   try{await apiRequest("/competitors",{method:"POST",body:JSON.stringify({account:state.competitorValue.trim(),platform:state.importPlatform,requested_count:state.importLimit})});await Promise.all([loadCompetitors(),loadImports()]);state.competitorValue="";showToast("Источник добавлен. Загрузка поставлена в очередь.");}
@@ -322,9 +325,17 @@ app.addEventListener("error",e=>{
   else if(e.target.matches?.(".reel-thumb img")){e.target.parentElement.insertAdjacentHTML("afterbegin",icon("film-strip"));e.target.remove();}
 },true);
 document.addEventListener("keydown",event=>{
-  if(event.key==="Escape"){state.dialog=null;state.openMenu=null;state.mobileNav=false;render();}
+  if(event.key==="Escape"){state.dialog=null;state.openMenu=null;state.accountMenuOpen=false;state.mobileNav=false;render();}
   if(state.dialog&&event.key==="Tab"){const nodes=[...app.querySelectorAll(".dialog-panel button,.dialog-panel a")];const first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}
   const tab=event.target.closest?.("[data-tab]");if(tab&&["ArrowLeft","ArrowRight","Home","End"].includes(event.key)){event.preventDefault();app.querySelector(`[data-tab="${tab.dataset.tab==="reels"?"threads":"reels"}"]`)?.click();}
+});
+document.addEventListener("click",event=>{
+  if(state.accountMenuOpen&&!event.target.closest('.sidebar-foot')){
+    state.accountMenuOpen=false;
+    const menu=app.querySelector('.account-menu'),trigger=app.querySelector('.account-menu-trigger');
+    if(menu)menu.hidden=true;
+    trigger?.setAttribute('aria-expanded','false');
+  }
 });
 window.addEventListener("resize",()=>{const aside=app.querySelector(".sidebar");if(aside)aside.inert=matchMedia("(max-width:680px)").matches&&!state.mobileNav;autoSizeTextareas();});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&state.authChallenge&&!state.user)pollTelegramLogin();});

@@ -30,7 +30,7 @@ function loginPage() {
   const active=challenge&&!['expired','denied','consumed'].includes(status);
   const botName=challenge?new URL(challenge.bot_url).pathname.slice(1):"";
   const botWebURL=challenge?`https://web.telegram.org/k/#@${encodeURIComponent(botName)}`:"";
-  return `<main id="main-content" class="auth-layout"><section class="auth-entry">${publicBrand()}
+  return `<main id="main-content" class="auth-layout"><section class="auth-entry">${publicBrand()}<button class="theme-public-button icon-button" type="button" data-theme="toggle" aria-label="Сменить тему">${icon('sun')}</button>
     <div class="auth-content"><h1>${state.emailLogin?(state.emailLogin.challenge?"Проверьте почту":"Вход по почте"):challenge?"Один шаг до входа":"Вход за пару секунд"}</h1>
     <p class="auth-description">${state.emailLogin?(state.emailLogin.challenge?`Отправили шестизначный код на ${escapeHtml(state.emailLogin.email)}. Введите его здесь, в этом браузере.`:"Пришлём одноразовый код. Если аккаунт с этой почтой уже есть, откроем его. Иначе создадим новый."):challenge?"Подтвердите запрос в Telegram и вернитесь в этот браузер.":"Без пароля. Выберите удобный способ входа. Для первого входа создадим аккаунт автоматически."}</p>
     ${state.authError||oauthError()?`<p class="form-error auth-error" role="alert">${escapeHtml(state.authError||oauthError())}</p>`:""}
@@ -81,13 +81,62 @@ function accountHeading(title,description,symbol) {
 
 function accountPage() {
   document.title = "Профиль | Hype Hunter";
-  const security=new URLSearchParams(location.search).get("tab")==="security";
+  const tab=new URLSearchParams(location.search).get("tab")||"profile";
+  const tabs=[["profile","Профиль"],["subscription","Подписка и лимиты"],["scenarios","Настройки сценариев"],["notifications","Уведомления"],["security","Вход и безопасность"],["danger","Опасная зона"]];
   return shell(`<div class="account-content"><header class="page-header"><div><span class="eyebrow">Личный кабинет</span><h1>Профиль</h1><p>Ваши данные и доступ к Hype Hunter.</p></div></header>
-    <nav class="account-tabs" aria-label="Разделы профиля"><a href="/account" data-route ${!security?'aria-current="page"':''}>${icon("user-circle")}Основные данные</a><a href="/account?tab=security" data-route ${security?'aria-current="page"':''}>${icon("shield-check")}Вход и безопасность</a></nav>
-    ${security?accountSecurity():accountDetails()}
+    <nav class="account-tabs" aria-label="Разделы профиля">${tabs.map(([key,label])=>`<a href="/account${key==='profile'?'':'?tab='+key}" data-route ${tab===key?'aria-current="page"':''}>${label}</a>`).join('')}</nav>
+    ${tab==='security'?accountSecurity():tab==='subscription'?accountSubscription():tab==='scenarios'?accountPreferencesForm(false):tab==='notifications'?accountPreferencesForm(true):tab==='danger'?accountDanger():accountDetails()+accountAppearance()}
     <section class="account-id-strip"><div><strong>ID вашего аккаунта</strong><p>Поможет найти аккаунт при обращении за помощью.</p></div><button class="account-id" type="button" data-action="copy-account-id" aria-label="Скопировать ID аккаунта ${state.user.id}"><span>ID</span> ${state.user.id} ${icon("copy")}</button></section>
     <section class="account-exit"><div><h2>Выйти из аккаунта</h2><p>Завершить сеанс только на этом устройстве.</p></div><button class="button secondary" type="button" data-action="logout">${icon("sign-out")}Выйти</button></section>
     </div>`,"account-workspace");
+}
+
+function accountAppearance() {
+  return `<section class="account-panel">${accountHeading("Оформление","Выбор темы сохраняется в этом браузере.","sun")}<div class="preference-segments">${[['dark','moon','Тёмная'],['light','sun','Светлая']].map(([theme,symbol,label])=>`<button type="button" data-theme="${theme}" aria-pressed="${currentTheme()===theme}">${icon(symbol)}${label}</button>`).join('')}</div></section>`;
+}
+
+function accountSubscription() {
+  const trial=state.trial, early=trial?.limit===null;
+  return `<section class="account-panel plan-current"><h2>${early?'Ранний доступ':'Бесплатный'} <span class="plan-tag">Текущий тариф</span></h2><p>${early?'Для вашего существующего аккаунта сохранены прежние условия доступа.':trial?`Использовано ${trial.used} из ${trial.limit} бесплатных роликов · Осталось ${trial.remaining}`:'Загружаем лимиты…'}</p>${!early&&trial?`<progress value="${trial.used}" max="${trial.limit}" aria-label="Использовано бесплатных роликов"></progress><p class="muted">Лимит выдаётся один раз после регистрации и не сбрасывается при удалении материалов.</p>`:''}</section><div class="account-plans">${[['Старт','Для первых проб','1 999',40],['Про','Для ежедневной работы','3 900',100]].map(([name,desc,price,count],i)=>`<section class="account-panel pricing-option ${i?'recommended':''}">${i?'<span class="recommended-label">Рекомендуем</span>':''}<h2>${name}</h2><p>${desc}</p><div class="account-price">${price} <span>₽/мес</span></div><ul>${[`${count} материалов в месяц`,'Reels и Threads в одной библиотеке','Перевод и редактор своих текстов','Доска и календарь публикаций'].map(feature=>`<li>${icon('check-circle')}${feature}</li>`).join('')}</ul><button class="button ${i?'primary':'secondary'}" disabled>Оплата скоро</button></section>`).join('')}</div><p class="account-note">Подключение оплаты через ЮKassa готовится. Сейчас платные тарифы недоступны, деньги не списываются.</p>`;
+}
+
+function preferenceSwitch(name,title,description,value) {
+  return `<label class="preference-switch"><input type="checkbox" name="${name}" role="switch" ${value?'checked':''}><span class="switch-track" aria-hidden="true"></span><span><strong>${title}</strong><small>${description}</small></span></label>`;
+}
+
+function preferenceChoices(name,title,options,value) {
+  return `<fieldset class="preference-group"><legend>${title}</legend><div class="preference-segments">${options.map(([key,label])=>`<label><input type="radio" name="${name}" value="${key}" ${value===key?'checked':''} required><span>${label}</span></label>`).join('')}</div></fieldset>`;
+}
+
+function accountPreferencesForm(notifications) {
+  const p=state.preferences;
+  if(!p)return '<section class="account-panel"><p role="status">Загружаем настройки…</p></section>';
+  return `<section class="account-panel"><form data-preferences-form="${notifications?'notifications':'scenarios'}">${notifications?
+    preferenceSwitch('notifications_new_ideas','Новые идеи готовы','Письмо, когда загрузятся новые материалы конкурентов.',p.notifications_new_ideas)+preferenceSwitch('notifications_reminder','Напоминание о неснятом','Если сценарий находится в «Готово» больше трёх дней.',p.notifications_reminder)+preferenceSwitch('notifications_weekly','Сводка недели','Что разобрано, подготовлено и опубликовано.',p.notifications_weekly):
+    preferenceChoices('scenario_tone','Тон сценария',[['neutral','Нейтральный'],['conversational','Разговорный'],['bold','Смелый']],p.scenario_tone)+preferenceChoices('hook_length','Длина хука',[['short','Короткий · 4–6 слов'],['medium','Средний · 6–9 слов'],['long','Длинный · до 12 слов']],p.hook_length)+preferenceSwitch('use_personal_cta','Подставлять имя и оффер в CTA','Ваш призыв вместо призыва конкурента.',p.use_personal_cta)+`<div class="account-fields"><label>Бренд или имя<input name="brand_name" maxlength="80" value="${escapeHtml(p.brand_name)}" placeholder="Например, кофейня «Утро»"></label><label>Ваш оффер<input name="offer" maxlength="500" value="${escapeHtml(p.offer)}" placeholder="Что предлагаете и как с вами связаться"></label></div>`}
+    <p class="preferences-notice">${icon('info')}${notifications?'Предпочтения сохраняются. Рассылка уведомлений ещё не подключена — эти переключатели пока не запускают отправку писем.':'Настройки сохраняются. Применение к новым AI-сценариям подключим после восстановления перевода. Уже готовые тексты не изменятся.'}</p><div class="account-form-footer"><span class="muted" role="status" data-preferences-status></span><button class="button primary" type="submit">Сохранить настройки</button></div></form></section>`;
+}
+
+async function savePreferences(form) {
+  const userId=state.user.id, data=new FormData(form), notifications=form.dataset.preferencesForm==='notifications';
+  const payload={...state.preferences};
+  const names=notifications?['notifications_new_ideas','notifications_reminder','notifications_weekly']:['scenario_tone','hook_length','use_personal_cta','brand_name','offer'];
+  for(const name of names)payload[name]=typeof payload[name]==='boolean'?data.has(name):String(data.get(name)||'').trim();
+  const button=form.querySelector('[type="submit"]'), status=form.querySelector('[data-preferences-status]');
+  button.disabled=true;status.textContent='Сохраняем…';
+  try {const saved=await apiRequest('/auth/preferences',{method:'PUT',body:JSON.stringify(payload)});if(state.user?.id===userId){state.preferences=saved;status.textContent='Настройки сохранены';}}
+  catch(error){if(state.user?.id===userId){status.textContent=error.message;showToast(error.message,'error');}}
+  finally {button.disabled=false;}
+}
+
+function accountDanger() {
+  return `<section class="account-panel account-danger"><h2>Удалить все рабочие данные</h2><p>Конкуренты, загруженные материалы, сценарии и контент-план будут удалены. Аккаунт, способы входа и настройки останутся. Бесплатный лимит не восстановится.</p><details><summary class="button secondary">${icon('trash')}Удалить данные</summary><form data-clear-workspace-form><label for="clear-confirmation">Для подтверждения введите УДАЛИТЬ</label><input id="clear-confirmation" name="confirmation" autocomplete="off" required pattern="УДАЛИТЬ" placeholder="УДАЛИТЬ"><p>Это действие нельзя отменить через интерфейс.</p><button class="button danger" type="submit">Удалить все данные навсегда</button><p role="status" data-clear-status></p></form></details></section>`;
+}
+
+async function clearWorkspace(form) {
+  const button=form.querySelector('[type="submit"]'), status=form.querySelector('[data-clear-status]');button.disabled=true;
+  try {await apiRequest('/workspace',{method:'DELETE',body:JSON.stringify({confirmation:new FormData(form).get('confirmation')})});state.reels=[];state.remixes=[];state.competitors=[];state.imports=[];state.translations=null;await loadRouteData();showToast('Рабочие данные удалены. Аккаунт сохранён.');}
+  catch(error){status.textContent=error.message;button.disabled=false;}
 }
 
 function accountDetails() {

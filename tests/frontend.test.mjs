@@ -6,21 +6,22 @@ import test from "node:test";
 // Exercise the shipped plain JS, with only the browser boundary stubbed.
 function appContext() {
   const element = { innerHTML: "", addEventListener() {}, querySelector() { return null; },
-    querySelectorAll() { return []; }, replaceChildren() {} };
+    querySelectorAll() { return []; }, replaceChildren() {}, setAttribute() {} };
   const location = new URL("https://hypehunter.ru/login");
   const storage = new Map();
   const windowListeners = new Map();
   const context = vm.createContext({
     URL, URLSearchParams, Intl, Date, DOMException, console, location,
     sessionStorage: { getItem: key => storage.get(key), setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k) },
-    document: { hidden: false, querySelector: () => element, addEventListener() {} },
+    localStorage: { getItem: key => storage.get(key), setItem: (k,v) => storage.set(k,v) },
+    document: { hidden: false, documentElement: {dataset:{}}, querySelector: () => element, addEventListener() {} },
     window: { addEventListener: (type,fn)=>windowListeners.set(type,fn), scrollTo() {} },
     history: { replaceState(_a,_b,path) { location.href=new URL(path,location).href; },
       pushState(_a,_b,path) { location.href=new URL(path,location).href; } },
     matchMedia: () => ({ matches: false }), setTimeout: () => 1, clearTimeout() {},
     fetch: async () => { throw new Error("Unexpected request"); },
   });
-  for (const file of ["ui/library.js", "ui/planner.js", "ui/editor.js", "ui/account.js", "ui/landing.js", "app.js"]) {
+  for (const file of ["ui/theme.js", "ui/library.js", "ui/planner.js", "ui/editor.js", "ui/account.js", "ui/landing.js", "app.js"]) {
     vm.runInContext(readFileSync(new URL("../"+file, import.meta.url), "utf8").replace(/bootstrap\(\);\s*$/, ""), context);
   }
   context.run = code => vm.runInContext(code, context);
@@ -29,6 +30,23 @@ function appContext() {
 }
 const response = data => ({ ok: true, status: 200, json: async () => data });
 const deferred = () => { let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve}; };
+
+test("themes persist and profile tabs show truthful account limits", () => {
+  const c=appContext();
+  c.run("setTheme('light')");
+  assert.equal(c.run("currentTheme()"),'light');
+  assert.equal(c.run("localStorage.getItem('hype-theme')"),'light');
+  c.run("state.user={id:1,display_name:'Tester',providers:[]};state.trial={limit:5,used:2,remaining:3}");
+  assert.match(c.run("accountAppearance()"),/data-theme="light" aria-pressed="true"/);
+  const subscription=c.run('accountSubscription()');
+  assert.match(subscription,/1 999/);assert.match(subscription,/3 900/);
+  assert.match(subscription,/Осталось 3/);assert.match(subscription,/disabled>Оплата скоро/);
+  c.run("state.preferences={scenario_tone:'neutral',brand_name:'<script>',offer:'',hook_length:'medium'}");
+  assert.match(c.run('accountPreferencesForm(false)'),/&lt;script&gt;/);
+  c.run('clearAccountMemory()');
+  assert.equal(c.run('state.preferences'),null);
+  assert.equal(c.run('currentTheme()'),'light');
+});
 
 test("trial shows remaining lifetime Reels and clears on account switch", () => {
   const c=appContext();
@@ -54,7 +72,7 @@ test("legal links are public documents and auth errors remain accessible and esc
     assert.match(page,/hypehunter.ru/);
     assert.match(page,/772460063060/);
     assert.match(page,/<main id="main-content"/);
-    assert.doesNotMatch(page,/<script/);
+    assert.doesNotMatch(page.replace('<script src="/ui/theme.js"></script>',''),/<script/);
   }
 });
 

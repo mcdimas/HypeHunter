@@ -9,6 +9,7 @@ from sqlalchemy import and_, delete, func, or_, text, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
+from pydantic import BaseModel, ConfigDict
 
 from .apify_import import ACTIVE_IMPORT_STATUSES, run_apify_import
 from .auth import require_user_id
@@ -56,6 +57,40 @@ from .services import (
 
 
 router = APIRouter(prefix="/api")
+
+
+class WorkspaceClear(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirmation: Literal["УДАЛИТЬ"]
+
+
+@router.delete("/workspace")
+def clear_workspace(payload: WorkspaceClear, session: Session = Depends(get_session),
+                    user_id: int = Depends(require_user_id), settings: Settings = Depends(get_settings)) -> dict:
+    # Same user lock as imports: do not race a new reservation or active worker.
+    trial_user(session, user_id)
+    for model, statuses in ((ImportJob, ACTIVE_IMPORT_STATUSES), (TranslationBatch, ACTIVE_TRANSLATION_STATUSES)):
+        if session.exec(select(model.id).where(model.user_id == user_id, model.status.in_(statuses)).limit(1)).first():
+            raise HTTPException(409, "Сначала дождитесь завершения загрузки и перевода или остановите загрузку.")
+    media_paths = {row.media_path for row in session.exec(select(Reel).where(Reel.user_id == user_id)).all()}
+    media_paths.update(row.avatar_url for row in session.exec(select(Competitor).where(Competitor.user_id == user_id)).all())
+    counts = {}
+    for model in (Remix, TranslationBatch, AppEvent, ImportJob, Reel, Competitor):
+        counts[model.__tablename__] = session.exec(select(func.count(model.id)).where(model.user_id == user_id)).one()
+        session.exec(delete(model).where(model.user_id == user_id))
+    # Do not remove a media file still referenced by another account/profile.
+    removable = []
+    for path in media_paths:
+        if not path:
+            continue
+        referenced = any(session.exec(select(model.id).where(field == path).limit(1)).first() is not None
+                         for model, field in ((Reel, Reel.media_path), (Competitor, Competitor.avatar_url), (User, User.avatar_path)))
+        if not referenced:
+            removable.append(path)
+    # Account, identities, sessions, preferences and lifetime trial usage remain intact.
+    session.commit()
+    _remove_media_files(settings.media_root, removable)
+    return {"deleted": counts}
 
 
 @router.get("/health", response_model=HealthRead)
