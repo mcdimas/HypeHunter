@@ -65,6 +65,7 @@ def test_email_registration_repeat_cookie_logout_and_isolation(auth_app, monkeyp
     cookie = result.headers["set-cookie"]
     assert all(value in cookie for value in ("__Host-hype_session", "HttpOnly", "Secure", "SameSite=lax", "Path=/"))
     user_id = first.get("/api/auth/me").json()["id"]
+    assert first.get("/api/trial").json() == {"limit": 5, "used": 0, "remaining": 5}
     assert first.get("/api/auth/me").json()["providers"] == ["email"]
     with Session(engine) as session:
         competitor = Competitor(user_id=user_id, handle="@emailtest", profile_url="https://instagram.com/emailtest")
@@ -221,6 +222,28 @@ def test_email_parallel_finish_and_registration(auth_app, monkeypatch):
         identities = session.exec(select(AuthIdentity).where(AuthIdentity.provider == "email", AuthIdentity.provider_subject == "parallel@mail.ru")).all()
         assert len(identities) == 1
         assert len(session.exec(select(LoginSession).where(LoginSession.user_id == identities[0].user_id)).all()) == 2
+
+
+@pytest.mark.skipif(not os.getenv("AUTH_PG_TEST_URL"), reason="PostgreSQL trial reservation race")
+def test_trial_parallel_import_reserves_five_once(auth_app, monkeypatch):
+    app, engine = auth_app
+    _, sent = email_setup(app, monkeypatch)
+    first, headers = browser(app)
+    challenge = email_start(first, headers, "trialrace@mail.ru")
+    assert email_finish(first, headers, challenge, sent[-1][1]).status_code == 200
+    settings = app.dependency_overrides[get_settings]()
+    settings.apify_token = "fake-source"
+    monkeypatch.setattr("app.api.run_apify_import", lambda *args: None)
+    def create(index):
+        clone = TestClient(app, base_url="https://testserver", cookies=dict(first.cookies))
+        return clone.post("/api/competitors", json={"account": f"trialrace{index}", "requested_count": 20}, headers=headers).status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(create, [1, 2]))
+    assert sorted(results) == [201, 409]
+    user_id = first.get("/api/auth/me").json()["id"]
+    with Session(engine) as session:
+        jobs = session.exec(select(ImportJob).where(ImportJob.user_id == user_id)).all()
+        assert len(jobs) == 1 and jobs[0].trial_reels_limit == 5
 
 
 @pytest.fixture

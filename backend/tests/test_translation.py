@@ -29,7 +29,7 @@ def session_factory() -> Session:
 
 def fake_openai(prompt: str, schema: dict, settings: Settings) -> TranslationResult:
     assert "Переведи дословно текста рилса на русский язык" in prompt
-    assert settings.openai_model == "gpt-4.1"
+    assert settings.openai_model == "gpt-5.6-luna"
     assert schema["properties"]["translations"]["type"] == "array"
     source = json.loads(prompt.split("SOURCE_REELS_JSON:\n", 1)[1])
     translations = [
@@ -81,7 +81,7 @@ def test_translation_backfill_chunks_reels_and_persists_api_response(monkeypatch
     settings = Settings(
         database_url="sqlite://",
         media_root=".test-media",
-        openai_model="gpt-4.1",
+        openai_model="gpt-5.6-luna",
         translation_batch_size=10,
     )
     run_translation_backfill(
@@ -99,8 +99,8 @@ def test_translation_backfill_chunks_reels_and_persists_api_response(monkeypatch
         assert all(batch.translated_count == batch.item_count for batch in batches)
         assert all(batch.raw_response and '"translations"' in batch.raw_response for batch in batches)
         assert all(reel.translation_status == "completed" for reel in reels)
-        assert all(reel.translation_model == "gpt-4.1" for reel in reels)
-        assert all(reel.translation_reasoning_effort == "none" for reel in reels)
+        assert all(reel.translation_model == "gpt-5.6-luna" for reel in reels)
+        assert all(reel.translation_reasoning_effort == "high" for reel in reels)
         assert all(reel.translated_script.startswith("Полный перевод") for reel in reels)
 
 

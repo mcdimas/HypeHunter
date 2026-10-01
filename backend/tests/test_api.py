@@ -28,7 +28,7 @@ def seed_database() -> None:
     SQLModel.metadata.create_all(engine)
     now = datetime.now(timezone.utc)
     with Session(engine) as session:
-        session.add(User(id=1, display_name="Test user"))
+        session.add(User(id=1, display_name="Test user", trial_reels_limit=None))
         session.flush()
         competitor = Competitor(
             user_id=1,

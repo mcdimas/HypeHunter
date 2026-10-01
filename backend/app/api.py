@@ -18,9 +18,10 @@ from .translation import (
     translation_counts,
 )
 from .openai_client import translation_ready
+from .trial import reserve_trial, trial_user
 from .config import Settings, get_settings
 from .database import get_session
-from .models import AppEvent, AuthIdentity, Competitor, ImportJob, Reel, Remix, TranslationBatch
+from .models import AppEvent, AuthIdentity, Competitor, ImportJob, Reel, Remix, TranslationBatch, User
 from .schemas import (
     CompetitorCreate,
     CompetitorRead,
@@ -127,6 +128,13 @@ def list_competitors(user_id: int = Depends(require_user_id), session: Session =
     return [competitor_read(session, competitor) for competitor in competitors]
 
 
+@router.get("/trial")
+def trial_status(user_id: int = Depends(require_user_id), session: Session = Depends(get_session)):
+    user = session.get(User, user_id)
+    return {"limit": user.trial_reels_limit, "used": user.trial_reels_used,
+            "remaining": None if user.trial_reels_limit is None else max(0, user.trial_reels_limit - user.trial_reels_used)}
+
+
 @router.post("/competitors", response_model=CompetitorRead, status_code=status.HTTP_201_CREATED)
 def create_competitor(
     payload: CompetitorCreate,
@@ -139,6 +147,7 @@ def create_competitor(
     if handle == "@pantela.evgeny":
         raise HTTPException(422, "Этот аккаунт не добавляется без отдельного запроса владельца")
     _check_import_budget(session, user_id, settings)
+    trial_limit = reserve_trial(session, user_id, payload.platform)
     competitor = Competitor(
         user_id=user_id,
         handle=handle,
@@ -160,7 +169,8 @@ def create_competitor(
         user_id=user_id,
         competitor_id=competitor.id,
         status=initial_status,
-        requested_count=min(payload.requested_count, settings.apify_import_limit, 20),
+        requested_count=trial_limit if trial_limit is not None else min(payload.requested_count, settings.apify_import_limit, 20),
+        trial_reels_limit=trial_limit,
         stage="queued" if settings.apify_token else "waiting_for_token",
         stage_message="Задача поставлена в очередь" if settings.apify_token else "Конкурент сохранён. Для запуска нужен Apify token",
         progress_current=2,
@@ -254,12 +264,15 @@ def delete_competitor(
     settings: Settings = Depends(get_settings),
     user_id: int = Depends(require_user_id),
 ) -> None:
+    trial_user(session, user_id)
     competitor = session.get(Competitor, competitor_id)
     if not competitor or competitor.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Конкурент не найден")
 
     reels = session.exec(select(Reel).where(Reel.competitor_id == competitor_id, Reel.user_id == user_id)).all()
     jobs = session.exec(select(ImportJob).where(ImportJob.competitor_id == competitor_id, ImportJob.user_id == user_id)).all()
+    if any(job.status in ACTIVE_IMPORT_STATUSES for job in jobs):
+        raise HTTPException(409, "Сначала остановите текущую загрузку этого конкурента.")
     reel_ids = {reel.id for reel in reels if reel.id is not None}
     job_ids = {job.id for job in jobs if job.id is not None}
     actor_run_ids = [job.actor_run_id for job in jobs if job.status in ACTIVE_IMPORT_STATUSES and job.actor_run_id]
@@ -565,6 +578,7 @@ def cancel_import(
     settings: Settings = Depends(get_settings),
     user_id: int = Depends(require_user_id),
 ) -> ImportJobRead:
+    trial_user(session, user_id)
     job = session.get(ImportJob, job_id)
     if not job or job.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Задача импорта не найдена")
@@ -633,7 +647,7 @@ def _translation_overview(session: Session, settings: Settings, user_id: int) ->
             active=active,
             configured=translation_ready(settings),
             model=settings.openai_model,
-            reasoning_effort="none",
+            reasoning_effort=settings.openai_reasoning_effort,
             batch_size=settings.translation_batch_size,
         ),
         batches=[TranslationBatchRead.model_validate(batch) for batch in batches],
@@ -698,11 +712,13 @@ def create_import(
         return import_read(session, active_job)
 
     created_at = utc_now()
+    trial_limit = reserve_trial(session, user_id, competitor.platform)
     initial_status = "queued" if settings.apify_token else "waiting_for_token"
     job = ImportJob(
         user_id=user_id,
         competitor_id=competitor.id,
-        requested_count=min(payload.requested_count, settings.apify_import_limit, 20),
+        requested_count=trial_limit if trial_limit is not None else min(payload.requested_count, settings.apify_import_limit, 20),
+        trial_reels_limit=trial_limit,
         status=initial_status,
         stage="queued" if settings.apify_token else "waiting_for_token",
         stage_message="Задача поставлена в очередь" if settings.apify_token else "Для запуска нужен Apify token",

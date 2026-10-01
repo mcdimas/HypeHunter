@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     apify_profile_max_charge_usd: float = 0.05
     openai_api_key: str = Field(default="", repr=False)
     openai_enabled: bool = False
-    openai_model: str = "gpt-4.1"
+    openai_model: str = "gpt-5.6-luna"
+    openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "high"
     openai_timeout_seconds: int = Field(default=180, ge=10, le=600)
     openai_max_input_chars: int = Field(default=60000, ge=1000, le=120000)
     openai_max_output_tokens: int = Field(default=16000, ge=1000, le=32000)

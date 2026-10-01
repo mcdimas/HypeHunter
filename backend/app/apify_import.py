@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 from .config import Settings, get_settings
 from .database import engine
 from .models import Competitor, ImportJob, Reel
+from .trial import trial_user
 from .services import mark_russian_source_ready, record_event, utc_now
 
 
@@ -417,6 +418,9 @@ def run_apify_import(
         is_threads = competitor.platform == "threads"
         actor_id = settings.apify_threads_actor_id if is_threads else settings.apify_actor_id
         requested_count = min(job.requested_count, settings.apify_import_limit, 20)
+        trial_limit = job.trial_reels_limit
+        import_user_id = job.user_id
+        scan_count = min(settings.apify_import_limit, 20) if trial_limit is not None else requested_count
         current_avatar_url = competitor.avatar_url
         _set_job_stage(
             session,
@@ -432,8 +436,8 @@ def run_apify_import(
         client = client_factory(token)
         actor_input = {
             "username": [instagram_username],
-            "resultsLimit": requested_count,
-            "skipPinnedPosts": True,
+            "resultsLimit": scan_count,
+            "skipPinnedPosts": trial_limit is None,
             "skipTrialReels": False,
             "includeSharesCount": False,
             "includeTranscript": True,
@@ -449,7 +453,7 @@ def run_apify_import(
 
         run = client.actor(actor_id).start(
             run_input=actor_input,
-            max_items=requested_count,
+            max_items=scan_count,
             max_total_charge_usd=Decimal(str(settings.apify_threads_max_charge_usd if is_threads else settings.apify_max_charge_usd)),
             restart_on_error=False,
             timeout_secs=300,
@@ -495,7 +499,7 @@ def run_apify_import(
         dataset_id = finished_run.get("defaultDatasetId")
         if not dataset_id:
             raise RuntimeError("Apify не вернул dataset")
-        page = client.dataset(dataset_id).list_items(limit=requested_count)
+        page = client.dataset(dataset_id).list_items(limit=scan_count)
         raw_items = [item for item in page.items if isinstance(item, dict)]
 
         with create_session() as session:
@@ -558,6 +562,10 @@ def run_apify_import(
             normalizer = thread_values if is_threads else reel_values
             normalized = list({values["external_id"]: values for item in raw_items if (values := normalizer(item, competitor))}.values())
             normalized.sort(key=lambda values: values["published_at"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+            if trial_limit is not None:
+                existing_ids = set(session.exec(select(Reel.external_id).where(Reel.user_id == job.user_id)).all())
+                normalized = [values for values in normalized if values["external_id"] not in existing_ids]
+                normalized.sort(key=lambda values: (values.get("views") or 0, values.get("likes_count") or 0), reverse=True)
             normalized = normalized[:requested_count]
             if not normalized:
                 raise RuntimeError("Apify не вернул доступных публикаций этого аккаунта. Проверьте имя, публичность профиля и журнал загрузки.")
@@ -578,6 +586,14 @@ def run_apify_import(
             )
 
             cached_thumbnail_count = 0
+            quota_user = trial_user(session, job.user_id)
+            # Serialize cancellation/deletion with saving + quota consumption.
+            _raise_if_cancelled(session, job)
+            if trial_limit is not None:
+                remaining = max(0, (quota_user.trial_reels_limit or 0) - quota_user.trial_reels_used)
+                normalized = normalized[:min(trial_limit, remaining)]
+                if not normalized:
+                    raise RuntimeError("Лимит бесплатных Reels исчерпан.")
             imported_ids = []
             new_count = 0
             for values in normalized:
@@ -626,6 +642,9 @@ def run_apify_import(
 
             _raise_if_cancelled(session, job)
             imported_at = utc_now()
+            if trial_limit is not None:
+                quota_user.trial_reels_used += new_count
+                session.add(quota_user)
             competitor.avatar_url = cached_avatar or profile_avatar_url or competitor.avatar_url
             competitor.last_import_at = imported_at
             competitor.updated_at = imported_at
@@ -642,6 +661,8 @@ def run_apify_import(
                 else f"Сохранено публикаций: {len(normalized)}"
             )
             job.result_summary = {
+                "selection": "most_viewed_in_recent_sample" if trial_limit is not None else "recent",
+                "scanned_count": len(raw_items),
                 "requested_count": requested_count,
                 "raw_count": len(raw_items),
                 "normalized_count": len(normalized),
@@ -679,7 +700,7 @@ def run_apify_import(
             from .translation import run_translation_backfill
 
             try:
-                run_translation_backfill(settings_override=settings, session_factory=create_session, only_ids=imported_ids, user_id=job.user_id)
+                run_translation_backfill(settings_override=settings, session_factory=create_session, only_ids=imported_ids, user_id=import_user_id)
             except Exception as translation_error:
                 with create_session() as session:
                     record_event(

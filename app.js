@@ -15,7 +15,7 @@ function cancelledRequest() { return new DOMException("", "AbortError"); }
 function restoredReturnPath() { try { const id=sessionStorage.getItem("auth-user-id"), value=sessionStorage.getItem(`editor-return:${id}`); return value && /^\/(library|content-plan)(\?|$)/.test(value) ? value : "/content-plan"; } catch { return "/content-plan"; } }
 function recoveryKey(slug) { return `draft:${state.user?.id}:${slug}`; }
 function clearAccountMemory() {
-  state.emailLogin=null;
+  state.emailLogin=null;state.trial=null;
   clearTimeout(importPollTimer);clearTimeout(authPollTimer);clearTimeout(draftTimer);clearTimeout(searchTimer);
   accountVersion++;requestId++;routeRequestId++;loginAttempt++;
   toastRegion.replaceChildren();
@@ -93,7 +93,7 @@ async function loadReels({quiet=false}={}) {
   finally{if(id===requestId){state.loadingReels=false;if(quiet&&app.querySelector("[data-home-results]"))app.querySelector("[data-home-results]").innerHTML=homeResults();else render();}}
 }
 async function loadRemixes(){state.remixes=await apiRequest("/remixes");}
-async function loadCompetitors(){state.competitors=await apiRequest("/competitors");}
+async function loadCompetitors(){const [competitors,trial]=await Promise.all([apiRequest("/competitors"),apiRequest("/trial")]);state.competitors=competitors;state.trial=trial;}
 async function loadImports(){state.imports=await apiRequest("/imports");}
 async function loadTranslations(){state.translations=await apiRequest("/translations");}
 function scheduleImportPolling(){
@@ -101,7 +101,7 @@ function scheduleImportPolling(){
   if(state.route!=="/competitors")return;
   importPollTimer=setTimeout(async()=>{
     try{await Promise.all([loadCompetitors(),loadImports(),loadTranslations()]);if(state.route!=="/competitors")return;
-      for(const [selector,fn] of [["[data-import-tracker]",progressMarkup],["[data-competitors-body]",competitorRows],["[data-imports-body]",importRows],["[data-translation-tracker]",translationMarkup]]){
+      for(const [selector,fn] of [["[data-trial-summary]",trialMarkup],["[data-import-tracker]",progressMarkup],["[data-competitors-body]",competitorRows],["[data-imports-body]",importRows],["[data-translation-tracker]",translationMarkup]]){
         const el=app.querySelector(selector);if(el && !el.contains(document.activeElement) && !el.querySelector("details[open]"))el.innerHTML=fn();
       }
     }catch(e){showToast(e.message,"error");}finally{if(state.route==="/competitors")scheduleImportPolling();}

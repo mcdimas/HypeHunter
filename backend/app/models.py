@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Column, DateTime, JSON, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Column, DateTime, Integer, JSON, String, Text, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -14,6 +14,8 @@ class User(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     display_name: str = Field(default="", max_length=255)
     name_edited: bool = Field(default=False)
+    trial_reels_limit: int | None = Field(default=5, sa_column=Column(Integer().evaluates_none(), nullable=True, default=5))
+    trial_reels_used: int = Field(default=0)
     avatar_path: str | None = Field(default=None, max_length=1024)
     avatar_edited: bool = Field(default=False)
     status: str = Field(default="active", max_length=32, index=True)
@@ -213,6 +215,7 @@ class ImportJob(SQLModel, table=True):
     provider: str = Field(default="apify", max_length=32)
     status: str = Field(default="waiting_for_token", max_length=32, index=True)
     requested_count: int = Field(default=20, ge=1, le=100)
+    trial_reels_limit: int | None = Field(default=None)
     imported_count: int = Field(default=0, ge=0)
     error_message: str | None = Field(default=None, sa_column=Column(Text))
     actor_run_id: str | None = Field(default=None, max_length=128)

@@ -30,6 +30,17 @@ function appContext() {
 const response = data => ({ ok: true, status: 200, json: async () => data });
 const deferred = () => { let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve}; };
 
+test("trial shows remaining lifetime Reels and clears on account switch", () => {
+  const c=appContext();
+  c.run('state.trial={limit:5,used:2,remaining:3}');
+  assert.match(c.run("trialMarkup()"), /2 из 5/);
+  assert.match(c.run("trialMarkup()"), /20 последних/);
+  c.run('state.trial={limit:5,used:5,remaining:0}');
+  assert.match(c.run("trialMarkup()"), /после запуска подписок/);
+  c.run("clearAccountMemory()");
+  assert.equal(c.run("trialMarkup()"), "");
+});
+
 test("legal links are public documents and auth errors remain accessible and escaped", () => {
   const c=appContext();
   c.run('state.emailLogin={email:"test@gmail.com"};state.authError="Вход с этой почтой недоступен. <script>"');

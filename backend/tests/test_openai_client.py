@@ -40,11 +40,12 @@ def test_responses_contract_and_usage(monkeypatch):
     assert request.get_header("Authorization") == "Bearer test-secret-not-real"
     body = json.loads(request.data)
     assert body["store"] is False
-    assert body["model"] == "gpt-4.1"
+    assert body["model"] == "gpt-5.6-luna"
     assert body["text"]["format"]["strict"] is True
     assert body["text"]["format"]["schema"] == translation_schema()
     assert body["max_output_tokens"] == 16000
-    assert "tools" not in body and "reasoning" not in body
+    assert "tools" not in body
+    assert body["reasoning"] == {"effort": "high"}
     assert timeout == 180
     assert result.response_id == "resp_test"
     assert result.usage == {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}

@@ -164,7 +164,7 @@ def _run_translation_backfill(
                 reel_ids=[reel.id for reel in reels],
                 item_count=len(reels),
                 model=settings.openai_model,
-                reasoning_effort="none",
+                reasoning_effort=settings.openai_reasoning_effort,
                 prompt=prompt,
                 started_at=now,
                 updated_at=now,
@@ -228,7 +228,7 @@ def _run_translation_backfill(
                     reel.translation_error = None
                     reel.translation_source_hash = source_hash(reel)
                     reel.translation_model = settings.openai_model
-                    reel.translation_reasoning_effort = "none"
+                    reel.translation_reasoning_effort = settings.openai_reasoning_effort
                     reel.translated_at = utc_now()
                     reel.updated_at = utc_now()
                     session.add(reel)
