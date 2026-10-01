@@ -1,0 +1,12 @@
+{
+  "name": "ai-producer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "test": "node --check app.js && node --check ui/library.js && node --check ui/planner.js && node --check ui/editor.js && node --check ui/account.js && node --check ui/landing.js && node --check scripts/dev-server.mjs && node --test tests/frontend.test.mjs"
+  },
+  "dependencies": {
+    "@phosphor-icons/web": "^2.1.2"
+  }
+}

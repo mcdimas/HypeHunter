@@ -1,0 +1,121 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_producer}
+      POSTGRES_USER: ${POSTGRES_USER:-ai_producer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai-producer-local}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - database
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai_producer} -d ${POSTGRES_DB:-ai_producer}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    mem_limit: 256m
+
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ai_producer}:${POSTGRES_PASSWORD:-ai-producer-local}@postgres:5432/${POSTGRES_DB:-ai_producer}
+      MEDIA_ROOT: /data/media
+      APIFY_TOKEN: ${APIFY_TOKEN:-}
+      APIFY_ACTOR_ID: ${APIFY_ACTOR_ID:-apify/instagram-reel-scraper}
+      APIFY_PROFILE_ACTOR_ID: ${APIFY_PROFILE_ACTOR_ID:-apify/instagram-profile-scraper}
+      APIFY_IMPORT_LIMIT: ${APIFY_IMPORT_LIMIT:-20}
+      APIFY_MAX_CHARGE_USD: ${APIFY_MAX_CHARGE_USD:-1.10}
+      APIFY_PROFILE_MAX_CHARGE_USD: ${APIFY_PROFILE_MAX_CHARGE_USD:-0.05}
+      APIFY_THREADS_ACTOR_ID: ${APIFY_THREADS_ACTOR_ID:-webdata_labs/threads-scraper}
+      APIFY_THREADS_MAX_CHARGE_USD: ${APIFY_THREADS_MAX_CHARGE_USD:-0.10}
+      CODEX_HOME: /home/appuser/.codex
+      CODEX_CLI_PATH: codex
+      CODEX_MODEL: ${CODEX_MODEL:-gpt-5.6-sol}
+      CODEX_REASONING_EFFORT: ${CODEX_REASONING_EFFORT:-medium}
+      CODEX_TRANSLATION_BATCH_SIZE: ${CODEX_TRANSLATION_BATCH_SIZE:-10}
+      CODEX_TRANSLATION_TIMEOUT_SECONDS: ${CODEX_TRANSLATION_TIMEOUT_SECONDS:-1800}
+      CODEX_TRANSLATION_AUTO_START: ${CODEX_TRANSLATION_AUTO_START:-true}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      TELEGRAM_DELIVERY_MODE: ${TELEGRAM_DELIVERY_MODE:-webhook}
+      OWNER_TELEGRAM_ID: ${OWNER_TELEGRAM_ID:-}
+      AUTH_CODE_SECRET: ${AUTH_CODE_SECRET:-}
+      AUTH_CHALLENGE_MINUTES: ${AUTH_CHALLENGE_MINUTES:-5}
+      AUTH_SESSION_DAYS: ${AUTH_SESSION_DAYS:-30}
+      AUTH_IDLE_DAYS: ${AUTH_IDLE_DAYS:-7}
+    expose:
+      - "8000"
+    volumes:
+      - media_data:/data/media
+      - codex_data:/home/appuser/.codex
+    networks:
+      - app_internal
+      - database
+      - egress
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 768m
+
+  web:
+    build:
+      context: .
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - app_internal
+
+  caddy:
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${APP_PORT:-3300}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    read_only: true
+    tmpfs:
+      - /data:rw,noexec,nosuid,size=32m
+      - /config:rw,noexec,nosuid,size=16m
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app_internal
+      - ingress
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    mem_limit: 128m
+
+networks:
+  app_internal:
+    internal: true
+  database:
+    internal: true
+  ingress:
+  egress:
+
+volumes:
+  postgres_data:
+  media_data:
+  codex_data:

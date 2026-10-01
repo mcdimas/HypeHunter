@@ -1,0 +1,8 @@
+fastapi>=0.115,<1
+sqlmodel>=0.0.22,<1
+alembic>=1.14,<2
+psycopg[binary]>=3.2,<4
+pydantic-settings>=2.7,<3
+uvicorn[standard]>=0.34,<1
+apify-client>=2.5,<3
+Pillow>=12,<13
