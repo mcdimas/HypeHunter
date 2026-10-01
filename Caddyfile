@@ -1,6 +1,13 @@
 :80 {
 	encode zstd gzip
 
+	handle /api/auth/email/* {
+		request_body {
+			max_size 8KB
+		}
+		reverse_proxy api:8000
+	}
+
 	handle /api/* {
 		reverse_proxy api:8000
 	}

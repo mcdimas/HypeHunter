@@ -6,7 +6,7 @@ const state = {
   loadingReels: false, loadingEditor: false, error: "", mobileNav: false, openMenu: null, dialog: null,
   importing: false, refreshingId: null, cancellingImportId: null, competitorValue: "", competitorError: "", importPlatform: "reels", importLimit: 20,
   planView: "board", planFormat: "all", planQuery: "", calendarWeek: weekStart(), dirty: false, saveError: "", editorReturn: restoredReturnPath(),
-  user: null, csrf: "", authChallenge: null, authStatus: "", authError: "", authBusy: false, sessions: [],
+  user: null, csrf: "", authChallenge: null, authStatus: "", authError: "", authBusy: false, sessions: [], emailLogin: null,
   profileName: null, profileBusy: false, photoBusy: false, profileError: "", profileSaved: ""
 };
 let searchTimer, draftTimer, importPollTimer, authPollTimer, savePromise, authPollInFlight;
@@ -15,6 +15,7 @@ function cancelledRequest() { return new DOMException("", "AbortError"); }
 function restoredReturnPath() { try { const id=sessionStorage.getItem("auth-user-id"), value=sessionStorage.getItem(`editor-return:${id}`); return value && /^\/(library|content-plan)(\?|$)/.test(value) ? value : "/content-plan"; } catch { return "/content-plan"; } }
 function recoveryKey(slug) { return `draft:${state.user?.id}:${slug}`; }
 function clearAccountMemory() {
+  state.emailLogin=null;
   clearTimeout(importPollTimer);clearTimeout(authPollTimer);clearTimeout(draftTimer);clearTimeout(searchTimer);
   accountVersion++;requestId++;routeRequestId++;loginAttempt++;
   toastRegion.replaceChildren();
@@ -111,7 +112,7 @@ async function loadRouteData(){
   requestId++;clearTimeout(searchTimer);
   state.error="";clearTimeout(importPollTimer);
   routeAccess();
-  if(state.route!=="/login"){loginAttempt++;clearTimeout(authPollTimer);state.authChallenge=null;state.authStatus="";state.authBusy=false;}
+  if(state.route!=="/login"){loginAttempt++;clearTimeout(authPollTimer);state.authChallenge=null;state.emailLogin=null;state.authStatus="";state.authBusy=false;}
   if(state.route==="/"||!state.user){render();return;}
   if(state.route==="/account"){const sessions=await apiRequest("/auth/sessions");if(id!==routeRequestId)return;state.sessions=sessions;render();}
   else if(state.route==="/library")await loadReels();
@@ -198,6 +199,10 @@ app.addEventListener("click",async event=>{
     if(!state.user){
       if(target.dataset.action==="begin-telegram"||target.dataset.action==="restart-login")await beginTelegramLogin();
       if(target.dataset.action==="begin-yandex")await beginYandexLogin();
+      if(target.dataset.action==="begin-email"){loginAttempt++;clearTimeout(authPollTimer);state.authChallenge=null;state.authError="";state.emailLogin={email:""};render();app.querySelector('#email-login-input')?.focus();}
+      if(target.dataset.action==="cancel-email"){loginAttempt++;state.emailLogin=null;state.authError="";render();}
+      if(target.dataset.action==="change-email"){state.emailLogin={email:state.emailLogin?.email||""};state.authError="";render();app.querySelector('#email-login-input')?.focus();}
+      if(target.dataset.action==="resend-email")await submitEmailLogin(null,true);
       if(target.dataset.action==="copy-telegram-command"){
         const field=app.querySelector("#telegram-start-command");
         if(field){try{await navigator.clipboard.writeText(field.value);showToast("Команда скопирована. Отправьте её боту в Telegram.");}catch{field.focus();field.select();showToast("Скопируйте выделенную команду и отправьте её боту.");}}
@@ -296,6 +301,7 @@ app.addEventListener("change",async event=>{
   }catch(e){showToast(e.message,"error");render();}
 });
 app.addEventListener("submit",async event=>{
+  if(event.target.matches("[data-email-form]")){event.preventDefault();await submitEmailLogin(event.target);return;}
   if(event.target.matches("[data-profile-form]")){event.preventDefault();await saveProfile();return;}
   if(!event.target.matches("[data-competitor-form]"))return;event.preventDefault();
   state.importing=true;state.competitorError="";render();
@@ -352,6 +358,28 @@ async function beginYandexLogin(purpose="login"){
     location.assign(result.authorize_url);
   }catch(error){state.authError=error.message;if(purpose==="link")showToast(error.message,"error");}
   finally{state.authBusy=false;render();}
+}
+async function submitEmailLogin(form,resend=false){
+  if(state.authBusy||!state.emailLogin||state.user)return;
+  const flow=state.emailLogin,attempt=++loginAttempt;
+  const finish=Boolean(flow.challenge)&&!resend;
+  const code=finish?new FormData(form).get('code'):null;
+  if(!finish&&form)flow.email=String(new FormData(form).get('email')||'').trim();
+  state.authBusy=true;state.authError="";render();
+  try{
+    const result=await apiRequest(`/auth/email/${finish?'finish':'start'}`,{method:'POST',body:JSON.stringify(finish?{challenge_id:flow.challenge.challenge_id,code}:{email:flow.email,return_to:loginReturnPath(new URLSearchParams(location.search).get('return_to'))})});
+    if(attempt!==loginAttempt||state.route!=='/login'||state.emailLogin!==flow||state.user)return;
+    if(finish){state.emailLogin=null;history.replaceState({},'',result.return_to);state.route=normalizeRoute(location.pathname);await bootstrap();}
+    else{flow.challenge=result;flow.resendAt=Date.now()+result.resend_after*1000;updateEmailResend();}
+  }catch(error){if(attempt===loginAttempt&&state.emailLogin===flow)state.authError=error.message;}
+  finally{if(attempt===loginAttempt){state.authBusy=false;render();app.querySelector('#email-login-input')?.focus();}}
+}
+function updateEmailResend(){
+  const flow=state.emailLogin;if(!flow?.challenge||state.route!=='/login')return;
+  const remaining=Math.max(0,Math.ceil((flow.resendAt-Date.now())/1000));
+  const button=app.querySelector('[data-action="resend-email"]');
+  if(button){button.disabled=Boolean(remaining||state.authBusy);button.textContent=remaining?`Отправить повторно через ${remaining} с`:'Отправить код ещё раз';}
+  if(remaining)setTimeout(()=>{if(state.emailLogin===flow)updateEmailResend();},1000);
 }
 function oauthError(){
   return ({yandex_invalid:"Запрос входа недействителен. Начните вход заново в этом браузере.",yandex_expired:"Время запроса истекло. Начните вход заново.",yandex_denied:"Вход через Яндекс отменён. Вы можете попробовать снова.",yandex_unavailable:"Не удалось получить ответ Яндекса. Попробуйте войти ещё раз.",yandex_conflict:"Этот Яндекс ID уже связан с другим аккаунтом, либо у вас уже подключён другой Яндекс ID.",yandex_disabled:"Аккаунт недоступен. Обратитесь в поддержку."})[new URLSearchParams(location.search).get("auth_error")]||"";

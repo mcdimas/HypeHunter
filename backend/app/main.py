@@ -11,6 +11,7 @@ from .config import get_settings
 from .database import engine
 from .models import Competitor, Reel, User
 from .yandex_auth import router as yandex_router
+from .email_auth import router as email_router
 
 
 settings = get_settings()
@@ -45,6 +46,7 @@ async def account_boundary(request, call_next):
         "/api/auth/telegram/start", "/api/auth/telegram/status", "/api/auth/telegram/finish",
         "/api/telegram/webhook",
         "/api/auth/yandex/start", "/api/auth/yandex/callback",
+        "/api/auth/email/start", "/api/auth/email/finish",
     }
     if request.method not in {"GET", "HEAD", "OPTIONS"} and path != "/api/telegram/webhook":
         try:
@@ -81,4 +83,5 @@ app.include_router(router)
 app.include_router(auth_router)
 app.include_router(webhook_router)
 app.include_router(yandex_router)
+app.include_router(email_router)
 app.mount("/media", StaticFiles(directory=settings.media_root, check_dir=False), name="media")

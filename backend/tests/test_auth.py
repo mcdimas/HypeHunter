@@ -15,6 +15,212 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.config import Settings, get_settings
 from app.database import get_session
 from app.models import AuthChallenge, AuthIdentity, Competitor, ImportJob, Reel, TelegramUpdate, TranslationBatch, User, utc_now
+from app.models import EmailChallenge, AuthRateLimit, LoginSession
+
+
+def email_setup(app, monkeypatch):
+    module = importlib.import_module("app.email_auth")
+    settings = app.dependency_overrides[get_settings]()
+    settings.unisender_go_api_key = "test-mail-key"
+    settings.email_from_address = "login@example.org"
+    # Independent test rate-limit namespace, including PostgreSQL suites.
+    settings.auth_code_secret += module.secrets.token_hex(8)
+    sent = []
+    monkeypatch.setattr(module, "send_code", lambda settings, email, code, challenge_id: sent.append((email, code, challenge_id)))
+    return module, sent
+
+
+def email_start(client, headers, email, **kwargs):
+    result = client.post("/api/auth/email/start", json={"email": email, **kwargs}, headers=headers)
+    assert result.status_code == 200, result.text
+    assert "code" not in result.json()
+    return result.json()["challenge_id"]
+
+
+def email_finish(client, headers, challenge, code):
+    return client.post("/api/auth/email/finish", json={"challenge_id": challenge, "code": code}, headers=headers)
+
+
+def reset_email_cooldown(engine):
+    with Session(engine) as session:
+        for row in session.exec(select(AuthRateLimit)).all():
+            row.window_started_at = utc_now() - timedelta(hours=2)
+            session.add(row)
+        session.commit()
+
+
+def test_email_registration_repeat_cookie_logout_and_isolation(auth_app, monkeypatch):
+    app, engine = auth_app
+    _, sent = email_setup(app, monkeypatch)
+    first, headers = browser(app)
+    challenge = email_start(first, headers, " NewUser@MAIL.RU ", return_to="https://evil.example")
+    assert sent[-1][0] == "newuser@mail.ru"
+    assert first.get("/api/auth/me").status_code == 401
+    with Session(engine) as session:
+        row = session.get(EmailChallenge, challenge)
+        assert row.code_mac != sent[-1][1] and len(row.code_mac) == 64
+    result = email_finish(first, headers, challenge, sent[-1][1])
+    assert result.status_code == 200
+    assert result.json() == {"return_to": "/today"}
+    cookie = result.headers["set-cookie"]
+    assert all(value in cookie for value in ("__Host-hype_session", "HttpOnly", "Secure", "SameSite=lax", "Path=/"))
+    user_id = first.get("/api/auth/me").json()["id"]
+    assert first.get("/api/auth/me").json()["providers"] == ["email"]
+    with Session(engine) as session:
+        competitor = Competitor(user_id=user_id, handle="@emailtest", profile_url="https://instagram.com/emailtest")
+        session.add(competitor)
+        session.flush()
+        competitor_id = competitor.id
+        reel = Reel(user_id=user_id, competitor_id=competitor_id, external_id="email-private", title="Private", hook="Private text", author="@emailtest", media_path="/media/email-private.jpg")
+        session.add(reel)
+        session.flush()
+        reel_id = reel.id
+        session.add(ImportJob(user_id=user_id, competitor_id=competitor_id))
+        session.commit()
+    second, other_headers = browser(app)
+    other = email_start(second, other_headers, "otheruser@mail.ru")
+    assert email_finish(second, other_headers, other, sent[-1][1]).status_code == 200
+    assert second.get("/api/auth/me").json()["id"] != user_id
+    assert second.get("/api/competitors").json() == []
+    assert second.get("/api/reels").json()["total"] == 0
+    assert second.get("/api/imports").json() == []
+    assert second.get("/media/email-private.jpg").status_code == 404
+    assert second.patch(f"/api/competitors/{competitor_id}", json={"category": "stolen"}, headers=other_headers).status_code == 404
+    assert second.post("/api/remixes", json={"source_reel_id": reel_id}, headers=other_headers).status_code == 404
+    restarted = TestClient(app, base_url="https://testserver", cookies=dict(first.cookies))
+    assert restarted.get("/api/auth/me").json()["id"] == user_id
+    assert first.post("/api/auth/logout-all", headers=headers).status_code == 200
+    assert restarted.get("/api/auth/me").status_code == 401
+    reset_email_cooldown(engine)
+    again = email_start(first, headers, "newuser@mail.ru")
+    assert email_finish(first, headers, again, sent[-1][1]).status_code == 200
+    assert first.get("/api/auth/me").json()["id"] == user_id
+    assert len(first.get("/api/competitors").json()) == 1
+    assert first.post("/api/auth/logout", headers=headers).status_code == 200
+    assert first.get("/api/auth/me").status_code == 401
+
+
+def test_email_csrf_binding_attempts_expiry_replay_and_limits(auth_app, monkeypatch):
+    app, engine = auth_app
+    _, sent = email_setup(app, monkeypatch)
+    client, headers = browser(app)
+    assert client.post("/api/auth/email/start", json={"email": "security@mail.ru"}).status_code == 403
+    assert client.post("/api/auth/email/start", json={"email": "x@gmail.com"}, headers=headers).status_code == 422
+    assert client.post("/api/auth/email/start", json={"email": "x@evil.ru"}, headers=headers).status_code == 422
+    challenge = email_start(client, headers, "security@mail.ru")
+    code = sent[-1][1]
+    assert client.post("/api/auth/email/start", json={"email": "security@mail.ru"}, headers=headers).status_code == 429
+    other, other_headers = browser(app)
+    assert email_finish(other, other_headers, challenge, code).status_code == 403
+    assert email_finish(client, {**headers, "Origin": "https://evil.example"}, challenge, code).status_code == 403
+    wrong = "111111" if code != "111111" else "222222"
+    for _ in range(5):
+        assert email_finish(client, headers, challenge, wrong).status_code == 400
+    assert email_finish(client, headers, challenge, code).status_code == 410
+    expired = email_start(client, headers, "expired@mail.ru")
+    with Session(engine) as session:
+        row = session.get(EmailChallenge, expired)
+        row.expires_at = utc_now() - timedelta(seconds=1)
+        session.add(row)
+        session.commit()
+    assert email_finish(client, headers, expired, sent[-1][1]).status_code == 410
+    fresh = email_start(client, headers, "singleuse@mail.ru")
+    clone = TestClient(app, base_url="https://testserver", cookies=dict(client.cookies))
+    assert email_finish(client, headers, fresh, sent[-1][1]).status_code == 200
+    assert email_finish(clone, headers, fresh, sent[-1][1]).status_code == 410
+    assert client.post("/api/auth/email/start", json={"email": "another@mail.ru"}, headers=headers).status_code == 409
+
+
+def test_email_yandex_match_only_after_otp_and_ambiguous_accounts_rejected(auth_app, monkeypatch):
+    app, engine = auth_app
+    _, sent = email_setup(app, monkeypatch)
+    with Session(engine) as session:
+        owner = User(display_name="Existing", name_edited=True)
+        session.add(owner)
+        session.flush()
+        owner_id = owner.id
+        session.add(AuthIdentity(user_id=owner_id, provider="yandex", provider_subject="email-match-yandex", verified_attributes={"default_email": "MATCH@YA.RU"}))
+        session.commit()
+    client, headers = browser(app)
+    challenge = email_start(client, headers, "match@ya.ru")
+    assert client.get("/api/auth/me").status_code == 401
+    with Session(engine) as session:
+        assert not session.exec(select(AuthIdentity).where(AuthIdentity.provider == "email", AuthIdentity.user_id == owner_id)).first()
+    assert email_finish(client, headers, challenge, sent[-1][1]).status_code == 200
+    me = client.get("/api/auth/me").json()
+    assert me["id"] == owner_id and me["display_name"] == "Existing"
+    assert set(me["providers"]) == {"email", "yandex"}
+    with Session(engine) as session:
+        other = User(display_name="Conflict")
+        session.add(other)
+        session.flush()
+        session.add(AuthIdentity(user_id=other.id, provider="yandex", provider_subject="email-ambiguous", verified_attributes={"default_email": "match@ya.ru"}))
+        session.commit()
+    client.post("/api/auth/logout", headers=headers)
+    reset_email_cooldown(engine)
+    challenge = email_start(client, headers, "match@ya.ru")
+    assert email_finish(client, headers, challenge, sent[-1][1]).status_code == 409
+    assert client.get("/api/auth/me").status_code == 401
+
+
+def test_email_send_failure_does_not_leave_usable_challenge(auth_app, monkeypatch):
+    app, engine = auth_app
+    module, _ = email_setup(app, monkeypatch)
+    def fail(*args):
+        raise RuntimeError("secret-provider-details")
+    monkeypatch.setattr(module, "send_code", fail)
+    client, headers = browser(app)
+    result = client.post("/api/auth/email/start", json={"email": "failure@mail.ru"}, headers=headers)
+    assert result.status_code == 503 and "secret-provider" not in result.text
+    assert module.COOKIE not in client.cookies
+    with Session(engine) as session:
+        row = session.exec(select(EmailChallenge).where(EmailChallenge.email == "failure@mail.ru")).one()
+        assert row.state == "failed"
+
+
+def test_email_mail_adapter_checks_acceptance_and_disables_tracking(monkeypatch):
+    import json
+    module = importlib.import_module("app.email_auth")
+    settings = Settings(unisender_go_api_key="test-key", email_from_address="login@example.org", public_origin="https://example.org")
+    reply = {"status": "success", "emails": ["adapter@mail.ru"]}
+    class Opener:
+        def open(self, request, timeout):
+            assert request.full_url == "https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json"
+            assert request.get_header("X-api-key") == "test-key" and timeout == 12
+            message = json.loads(request.data)["message"]
+            assert message["recipients"] == [{"email": "adapter@mail.ru"}]
+            assert message["track_read"] == message["track_links"] == 0
+            assert "123456" in message["body"]["plaintext"]
+            return io.BytesIO(json.dumps(reply).encode())
+    monkeypatch.setattr(module, "build_opener", lambda handler: Opener())
+    module.send_code(settings, "adapter@mail.ru", "123456", "request-id")
+    reply["failed_emails"] = {"adapter@mail.ru": "blocked"}
+    with pytest.raises(ValueError):
+        module.send_code(settings, "adapter@mail.ru", "123456", "request-id")
+
+
+@pytest.mark.skipif(not os.getenv("AUTH_PG_TEST_URL"), reason="PostgreSQL email concurrency")
+def test_email_parallel_finish_and_registration(auth_app, monkeypatch):
+    app, engine = auth_app
+    _, sent = email_setup(app, monkeypatch)
+    first, headers = browser(app)
+    a = email_start(first, headers, "parallel@mail.ru")
+    a_code = sent[-1][1]
+    reset_email_cooldown(engine)
+    second, other_headers = browser(app)
+    b = email_start(second, other_headers, "parallel@mail.ru")
+    b_code = sent[-1][1]
+    def finish(args):
+        original, h, challenge, code = args
+        clone = TestClient(app, base_url="https://testserver", cookies=dict(original.cookies))
+        return email_finish(clone, h, challenge, code).status_code
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(finish, [(first, headers, a, a_code), (first, headers, a, a_code), (second, other_headers, b, b_code)]))
+    assert sorted(results) == [200, 200, 410]
+    with Session(engine) as session:
+        identities = session.exec(select(AuthIdentity).where(AuthIdentity.provider == "email", AuthIdentity.provider_subject == "parallel@mail.ru")).all()
+        assert len(identities) == 1
+        assert len(session.exec(select(LoginSession).where(LoginSession.user_id == identities[0].user_id)).all()) == 2
 
 
 @pytest.fixture
@@ -91,14 +297,18 @@ def test_first_login_repeat_logout_and_isolation(auth_app):
     me = first.get("/api/auth/me").json()
     assert me["display_name"] == "First"
     with Session(engine) as session:
-        assert len(session.exec(select(User)).all()) == 1
-        assert len(session.exec(select(AuthIdentity)).all()) == 1
+        assert len(session.exec(select(AuthIdentity).where(AuthIdentity.provider == "telegram", AuthIdentity.provider_subject == "10101")).all()) == 1
+        assert len(session.exec(select(AuthIdentity).where(AuthIdentity.user_id == me["id"])).all()) == 1
         competitor = Competitor(user_id=me["id"], handle="@first", profile_url="https://instagram.com/first")
         session.add(competitor)
         session.flush()
-        session.add(Reel(user_id=me["id"], competitor_id=competitor.id, external_id="private-source",
+        competitor_id = competitor.id
+        source = Reel(user_id=me["id"], competitor_id=competitor.id, external_id="private-source",
                          title="Private source", hook="Private text", author="@first",
-                         media_path="/media/thumbnails/private-source.jpg"))
+                         media_path="/media/thumbnails/private-source.jpg")
+        session.add(source)
+        session.flush()
+        source_id = source.id
         session.add(ImportJob(user_id=me["id"], competitor_id=competitor.id, status="completed"))
         session.add(TranslationBatch(
             user_id=me["id"], status="completed", prompt="private prompt",
@@ -121,8 +331,8 @@ def test_first_login_repeat_logout_and_isolation(auth_app):
     assert second.get("/media/thumbnails/private-source.jpg").status_code == 404
     assert second.get("/api/auth/me").json()["id"] != me["id"]
     assert second.get("/api/competitors/1").status_code == 405  # no detail route
-    assert second.patch("/api/competitors/1", json={"category": "stolen"}, headers=second_headers).status_code == 404
-    assert second.post("/api/remixes", json={"source_reel_id": 1}, headers=second_headers).status_code == 404
+    assert second.patch(f"/api/competitors/{competitor_id}", json={"category": "stolen"}, headers=second_headers).status_code == 404
+    assert second.post("/api/remixes", json={"source_reel_id": source_id}, headers=second_headers).status_code == 404
     assert first.post("/api/auth/logout", headers=headers).status_code == 200
     assert first.get("/api/competitors").status_code == 401
     complete_login(app, first, headers, 10101, "First", 300)

@@ -148,6 +148,9 @@ def callback(request: Request, session: Session = Depends(get_session), settings
         # Provider exceptions may include tokens or code. Never log their content.
         return _redirect(destination + "auth_error=yandex_unavailable")
     subject = profile["id"]
+    if profile.get("default_email"):
+        from .email_auth import lock_email
+        lock_email(session, profile["default_email"])
     if session.bind.dialect.name == "postgresql":
         key = int.from_bytes(hashlib.sha256(("yandex:" + subject).encode()).digest()[:8], "big", signed=True)
         session.exec(text("SELECT pg_advisory_xact_lock(:key)").bindparams(key=key)).one()

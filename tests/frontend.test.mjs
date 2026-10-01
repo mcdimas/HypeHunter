@@ -42,6 +42,22 @@ test("shared illustration has no caption; Yandex uses a local SVG in both places
   }
 });
 
+test("email form uses one-time-code, escapes addresses and resets on account switch", () => {
+  const c=appContext();
+  c.run('state.authProviders={email:true};state.emailLogin={email:"test@mail.ru"}');
+  assert.match(c.run('futureSignInButtons()'), /data-action="begin-email"/);
+  assert.match(c.run('emailLoginForm()'), /autocomplete="email"/);
+  c.run('state.emailLogin={email:"<script>",challenge:{expires_in_minutes:5},resendAt:Date.now()+60000}');
+  const html=c.run('loginPage()');
+  assert.match(html,/autocomplete="one-time-code"/);
+  assert.match(html,/pattern="\[0-9\]\{6\}"/);
+  assert.match(html,/&lt;script&gt;/);
+  assert.doesNotMatch(html,/<script>/);
+  assert.match(html,/data-action="resend-email" disabled/);
+  c.run('clearAccountMemory()');
+  assert.equal(c.run('state.emailLogin'),null);
+});
+
 test("logout discards responses already in flight and resets account-only UI", async () => {
   const c=appContext(), pending=deferred();
   c.fetch=()=>pending.promise;

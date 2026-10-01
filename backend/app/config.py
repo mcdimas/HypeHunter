@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -36,6 +37,13 @@ class Settings(BaseSettings):
     auth_session_days: int = 30
     auth_idle_days: int = 7
     yandex_client_id: str = ""
+    unisender_go_api_key: str = ""
+    email_from_address: str = ""
+    email_from_name: str = "Hype Hunter"
+    email_code_minutes: int = Field(default=5, ge=1, le=10)
+    email_code_attempts: int = Field(default=5, ge=1, le=5)
+    email_resend_seconds: int = Field(default=60, ge=60)
+    email_hourly_limit: int = Field(default=100, ge=1)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

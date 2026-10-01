@@ -8,6 +8,12 @@
 .auth-description{font-size:16px;color:var(--muted);line-height:1.7;max-width:365px;margin-bottom:28px}
 .auth-primary{width:100%;min-height:50px!important;white-space:nowrap;box-shadow:0 5px 24px #7655ff24}
 .auth-primary .ph{font-size:21px}
+.email-login-form{display:grid;gap:14px}
+.email-login-form label{font-size:15px;font-weight:550}
+.email-login-form input{width:100%;min-width:0;padding:14px 16px;border:1px solid var(--border);border-radius:8px;background:#1c1924;color:var(--text);font-size:18px}
+.email-login-form input[name="code"]{letter-spacing:.3em;font-variant-numeric:tabular-nums}
+.email-login-form .muted{font-size:14px;line-height:1.6;margin-bottom:6px}
+.email-login-form .auth-restart{margin-top:0;justify-self:start}
 .auth-back{display:flex;align-items:center;gap:8px;align-self:flex-start;margin-top:auto;font-size:14px;color:var(--muted);padding:10px 0}
 .auth-back .ph{font-size:17px}
 .future-sign-in{display:grid;gap:8px;margin-top:27px}

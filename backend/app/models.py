@@ -68,6 +68,21 @@ class AuthChallenge(SQLModel, table=True):
     consumed_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
 
 
+class EmailChallenge(SQLModel, table=True):
+    __tablename__ = "email_challenges"
+
+    id: str = Field(sa_column=Column(String(64), primary_key=True))
+    email: str = Field(max_length=254)
+    browser_secret_hash: str = Field(max_length=64)
+    code_mac: str = Field(max_length=64)
+    state: str = Field(default="sending", max_length=16)
+    attempts: int = Field(default=0)
+    return_path: str = Field(default="/today", max_length=512)
+    created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False, index=True))
+    consumed_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+
+
 class OAuthRequest(SQLModel, table=True):
     __tablename__ = "oauth_requests"
 
