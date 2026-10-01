@@ -381,11 +381,14 @@ def me(request: Request, session: Session = Depends(get_session)) -> dict:
     identities = session.exec(select(AuthIdentity).where(AuthIdentity.user_id == user.id)).all()
     telegram = next((identity for identity in identities if identity.provider == "telegram"), None)
     email = next((identity for identity in identities if identity.provider == "email"), None)
+    yandex = next((identity for identity in identities if identity.provider == "yandex"), None)
+    yandex_email = yandex.verified_attributes.get("default_email") if yandex else None
     return {
         "id": user.id, "display_name": user.display_name, "avatar_path": user.avatar_path,
         "providers": [identity.provider for identity in identities], "session_id": login.id,
         "telegram_username": telegram.verified_attributes.get("username") if telegram else None,
-        "email": email.provider_subject if email else None,
+        "email": email.provider_subject if email else yandex_email,
+        "email_provider": "email" if email else ("yandex" if yandex_email else None),
     }
 
 

@@ -165,3 +165,59 @@
   .landing-pricing{grid-template-columns:1fr;gap:18px}.landing-price-card{padding:28px}.landing-plan-title{display:flex}.landing-plan-title>span{margin-top:0}.landing-price{font-size:41px}.landing-price-card li{font-size:14px}.landing-costs strong{font-size:26px}.landing-costs>div>span{font-size:13px}.landing-final h2{font-size:25px}.landing-footer-grid{grid-template-columns:1fr;gap:30px}.landing-footer-grid>div:first-child{grid-column:auto}
 }
 @media(max-width:360px){.landing-hero h1{font-size:24px}.landing-nav .auth-brand{font-size:12px}.landing-nav .auth-brand .ph{font-size:24px}.landing-costs strong{font-size:22px}.landing-plan-title{gap:5px}.landing-plan-title>span{font-size:10px}.workflow-comparison-row{flex-wrap:wrap}}
+
+/* Interactive product walkthrough. Public snapshots, no account mutations. */
+.landing-free-note{font-size:13px;color:var(--muted);margin:14px auto 0;line-height:1.6}
+.workflow-profile-text{min-width:0;white-space:nowrap;font-size:clamp(11px,1.2vw,14px);color:#dfd5f6}
+.workflow-profile-text:after,.workflow-typed-hook:after{content:"";display:inline-block;width:2px;height:1em;margin-left:3px;background:var(--link);vertical-align:-.1em;animation:landing-blink 1s steps(2,start) infinite}
+.workflow-reel-stage{display:flex;align-items:center;justify-content:center;gap:12px;height:235px;margin:17px 0 7px;padding:18px 6px 5px}
+.workflow-reel{position:relative;display:block;min-width:0;flex:1;max-width:118px;aspect-ratio:3/4;border-radius:10px;background:#0d0e12;border:2px solid transparent;opacity:.5;transform:scale(.9);isolation:isolate}
+.workflow-reel img{display:block;width:100%;height:100%;object-fit:cover;border-radius:8px}
+.workflow-reel:after{content:"";position:absolute;inset:40% 0 0;border-radius:0 0 8px 8px;background:linear-gradient(transparent,#000e);z-index:1}
+.workflow-reel.winner{z-index:2;opacity:1;transform:scale(1.12);border-color:#f5c252;box-shadow:0 0 25px #e5b14040}
+.reel-views{position:absolute;bottom:8px;left:6px;z-index:2;color:white;font-size:11px;font-weight:650;display:flex;align-items:center;gap:3px;white-space:nowrap}
+.winner-badge{position:absolute;top:-16px;left:50%;transform:translateX(-50%);background:#ffd16d;color:#483110;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:750;z-index:3}
+.workflow-real-metrics{display:flex;justify-content:center;gap:17px;font-size:12px;color:#d7cdeb;margin:5px 0 19px}
+.workflow-real-metrics span{display:flex;align-items:center;gap:5px}
+.workflow-real-metrics .ph{font-size:17px}
+.workflow-transcript{border-top:1px solid var(--border);padding-top:14px}
+.workflow-transcript summary,.workflow-try-edit summary{cursor:pointer;display:flex;align-items:center;gap:9px;font-size:14px;color:var(--link);min-height:32px}
+.workflow-transcript summary .ph:last-child{margin-left:auto}
+.workflow-transcript p{max-height:200px;overflow:auto;padding-right:10px;font-size:14px}
+.workflow-robot{object-fit:contain;flex-shrink:0}
+.workflow-niche{font-size:13px;color:var(--muted);margin:16px 0}
+.workflow-niche strong{font-weight:500;color:var(--link)}
+.workflow-rewrite{border-left:2px solid #574375;padding:8px 0 8px 18px}
+.workflow-rewrite .copy-label,.workflow-adapt-result .copy-label{font-size:12px;color:var(--muted)}
+.workflow-rewrite p{font-size:15px;margin:6px 0 15px;line-height:1.6}
+.workflow-strike{background:linear-gradient(#f67575,#f67575) left 55%/100% 2px no-repeat;box-decoration-break:clone;-webkit-box-decoration-break:clone;color:#b9aebc}
+.workflow-rewrite .workflow-your-hook{color:var(--link)}
+.workflow-rewrite .workflow-typed-hook{color:#f1ecff;font-size:19px;font-weight:550;min-height:92px;margin-bottom:0}
+.workflow-adapt-result{display:grid;gap:15px;margin-top:20px}
+.workflow-adapt-result p{font-size:13px;margin-top:5px}
+.workflow-try-edit{margin-top:20px;border-top:1px solid var(--border);padding-top:10px}
+.workflow-try-edit label{display:block;margin-top:14px}
+.workflow-plan-lanes>button{border-bottom:2px solid var(--border);padding:10px 3px;text-align:left;min-height:44px;font-size:13px}
+.workflow-plan .workflow-draft{margin-left:0}
+.workflow-draft .button{margin-top:18px;min-height:42px;font-size:13px;padding:9px 13px;white-space:normal}
+.workflow-draft textarea{font-size:14px;line-height:1.6;margin-top:9px;min-height:160px;resize:vertical}
+.workflow-date{display:grid;gap:8px;margin-top:15px;font-size:13px;color:var(--muted)}
+.workflow-date input{width:100%;min-width:0;color-scheme:dark}
+.workflow-ready{display:flex;gap:7px;align-items:center;color:#a9deb8;font-size:14px}
+.workflow-draft .workflow-ready-text{display:block;white-space:pre-wrap;font-size:14px!important;max-height:240px;overflow:auto}
+.workflow-draft>.text-link{margin-top:15px;min-height:35px;font-size:13px}
+@media(prefers-reduced-motion:no-preference){
+ .workflow-reel{animation:workflow-reel-side 9s infinite both}
+ .workflow-reel:nth-child(3){animation-delay:.25s}
+ .workflow-reel.winner{animation:workflow-reel-winner 9s infinite both}
+ .winner-badge{animation:workflow-winner-badge 9s infinite both}
+ .workflow-strike{animation:workflow-strike 12.35s infinite both}
+ .workflow-adapt-result{animation:workflow-result 12.35s infinite both}
+ @keyframes workflow-reel-side{0%,5%{opacity:0;transform:translateY(20px) scale(.9)}15%,30%{opacity:1;transform:translateY(0) scale(.96)}43%,88%{opacity:.4;transform:scale(.88)}100%{opacity:0;transform:scale(.88)}}
+ @keyframes workflow-reel-winner{0%,12%{opacity:0;transform:translateY(20px) scale(.96);border-color:transparent;box-shadow:none}24%,32%{opacity:1;transform:scale(.96);border-color:transparent;box-shadow:none}45%,88%{opacity:1;transform:scale(1.12);border-color:#f5c252;box-shadow:0 0 25px #e5b14060}100%{opacity:0;transform:scale(1.12)}}
+ @keyframes workflow-winner-badge{0%,33%,100%{opacity:0}43%,88%{opacity:1}}
+ @keyframes workflow-strike{0%,7%{background-size:0% 2px}15%,100%{background-size:100% 2px}}
+ @keyframes workflow-result{0%,52%{opacity:0;transform:translateY(7px)}64%,100%{opacity:1;transform:translateY(0)}}
+}
+@media(prefers-reduced-motion:reduce){.workflow-profile-text:after,.workflow-typed-hook:after{display:none}}
+@media(max-width:480px){.workflow-reel-stage{gap:8px;height:205px;padding-inline:0}.workflow-reel{max-width:94px}.reel-views{font-size:9px;left:3px;bottom:6px}.workflow-real-metrics{gap:12px;font-size:11px}.workflow-rewrite .workflow-typed-hook{font-size:17px;min-height:110px}.workflow-profile-text{font-size:12px}.workflow-plan .workflow-draft{padding:16px}}

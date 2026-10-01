@@ -11,6 +11,7 @@ const types = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
   ".webp": "image/webp",
   ".mp4": "video/mp4",
   ".svg": "image/svg+xml",
@@ -47,7 +48,7 @@ createServer((request, response) => {
   const requested = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const iconPath = "icons/regular/";
   // Serve browser assets only, never secrets, repository files or backend sources.
-  const asset = /^(?:index\.html|styles\.css|app\.js|ui\/[a-z-]+\.(?:css|js)|assets\/[a-z-]+\.(?:png|webp|mp4|svg)|icons\/regular\/[a-zA-Z0-9.-]+\.(?:css|woff2?|ttf))$/.test(requested);
+  const asset = /^(?:index\.html|styles\.css|app\.js|ui\/[a-z-]+\.(?:css|js)|ui\/landing-assets\/[a-z0-9-]+\.(?:jpg|png)|assets\/[a-z-]+\.(?:png|webp|mp4|svg)|icons\/regular\/[a-zA-Z0-9.-]+\.(?:css|woff2?|ttf))$/.test(requested);
   const route = /^(?:today|login|account|library|competitors|content-plan|remixes\/[a-zA-Z0-9_-]+)$/.test(requested);
   if (!asset && !route) { response.writeHead(404);response.end("Not found");return; }
   const mapped = requested.startsWith(iconPath)

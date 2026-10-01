@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import secrets
 from datetime import timedelta
 from typing import Literal
@@ -69,8 +70,12 @@ def _profile(code, verifier, settings):
         raise ValueError("No stable Yandex ID")
     if profile.get("client_id") != settings.yandex_client_id:
         raise ValueError("Unexpected OAuth client")
-    # No OAuth access/refresh tokens or unrequested email attributes are persisted.
-    return {key: str(profile.get(key) or "")[:255] for key in ("id", "display_name", "first_name", "last_name", "login")}
+    # Email is a profile attribute, never a key for merging accounts or email login.
+    result = {key: str(profile.get(key) or "")[:255] for key in ("id", "display_name", "first_name", "last_name", "login")}
+    email = profile.get("default_email")
+    if isinstance(email, str) and len(email) <= 254 and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        result["default_email"] = email
+    return result
 
 
 def _redirect(path):
@@ -109,7 +114,7 @@ def start(payload: StartRequest, request: Request, response: Response,
                         secure=True, httponly=True, samesite="lax", path="/")
     return {"authorize_url": "https://oauth.yandex.ru/authorize?" + urlencode({
         "response_type": "code", "client_id": settings.yandex_client_id,
-        "redirect_uri": _callback_url(settings), "scope": "login:info", "force_confirm": "yes",
+        "redirect_uri": _callback_url(settings), "scope": "login:info login:email", "force_confirm": "yes",
         "state": pending.id, "code_challenge": challenge, "code_challenge_method": "S256"})}
 
 

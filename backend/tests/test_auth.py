@@ -420,15 +420,33 @@ def test_yandex_exchange_uses_header_and_verifier_and_checks_client(monkeypatch)
     seen = []
     def provider(request):
         seen.append(request)
-        return {"access_token": "private-token"} if len(seen) == 1 else {"id": "42", "client_id": "client", "display_name": "Name"}
+        return {"access_token": "private-token"} if len(seen) == 1 else {"id": "42", "client_id": "client", "display_name": "Name", "default_email": "example@ya.ru"}
     monkeypatch.setattr(module, "_json", provider)
-    assert module._profile("code", "verifier", Settings(yandex_client_id="client"))["id"] == "42"
+    profile = module._profile("code", "verifier", Settings(yandex_client_id="client"))
+    assert profile["id"] == "42" and profile["default_email"] == "example@ya.ru"
     assert b"code_verifier=verifier" in seen[0].data
     assert "private-token" not in seen[1].full_url
     assert seen[1].get_header("Authorization") == "OAuth private-token"
     seen.clear()
     with pytest.raises(ValueError):
         module._profile("code", "verifier", Settings(yandex_client_id="other"))
+
+
+def test_yandex_email_is_profile_attribute_not_email_identity(auth_app, monkeypatch):
+    app, engine = auth_app
+    module = yandex_setup(app, monkeypatch, "90101")
+    monkeypatch.setattr(module, "_profile", lambda *args: {
+        "id": "90101", "display_name": "Name", "first_name": "Name", "default_email": "example@ya.ru"})
+    client, headers = browser(app)
+    params = yandex_start(client, headers)
+    assert params["scope"] == ["login:info login:email"]
+    assert yandex_finish(client, params).headers["location"] == "/today"
+    me = client.get("/api/auth/me").json()
+    assert me["email"] == "example@ya.ru"
+    assert me["email_provider"] == "yandex"
+    assert me["providers"] == ["yandex"]
+    with Session(engine) as session:
+        assert not session.exec(select(AuthIdentity).where(AuthIdentity.user_id == me["id"], AuthIdentity.provider == "email")).all()
 
 
 @pytest.mark.skipif(not os.getenv("AUTH_PG_TEST_URL"), reason="PostgreSQL OAuth concurrency")
