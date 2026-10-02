@@ -1,5 +1,6 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, statSync, readFileSync } from "node:fs";
 import { createServer, request as proxyHttpRequest } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { extname, join, normalize } from "node:path";
 
 const host = "127.0.0.1";
@@ -37,7 +38,8 @@ function proxyRequest(request, response) {
   request.pipe(proxy);
 }
 
-createServer((request, response) => {
+const serve = process.env.E2E_TLS === "1" ? handler => createHttpsServer({key:readFileSync('work/e2e/key.pem'),cert:readFileSync('work/e2e/cert.pem')},handler) : createServer;
+serve((request, response) => {
   let pathname;
   try { pathname = decodeURIComponent(new URL(request.url, `http://${host}`).pathname); }
   catch { response.writeHead(400);response.end("Bad request");return; }

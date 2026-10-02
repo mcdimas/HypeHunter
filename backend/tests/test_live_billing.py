@@ -50,6 +50,31 @@ def order(s, oid='first', plan='start'):
     return p
 
 
+def test_receipt_handoff_only_verified_success_unique_and_private(db,settings,monkeypatch):
+    # Contract for a future fiscal adapter: payment success is not receipt
+    # success. Until that adapter exists this is only the owner's handoff list.
+    monkeypatch.setattr('app.billing.is_owner',lambda session,config,uid:uid==1)
+    with Session(db) as s:
+        pending=order(s,'receipt-pending')
+        canceled=order(s,'receipt-canceled')
+        apply_payment(s,canceled,response(canceled,'canceled'),settings)
+        paid=order(s,'receipt-paid')
+        paid.buyer_inn='772460063060'
+        s.add(paid);s.commit()
+        apply_payment(s,paid,response(paid),settings)
+        apply_payment(s,paid,response(paid),settings)
+        rows=receipts(s,settings,1)
+        assert len(rows)==1 and rows[0]['id']==paid.id
+        assert rows[0]['receipt_email']=='receipt@mail.ru'
+        assert rows[0]['buyer_inn']=='772460063060'
+        assert 'receipt_email' not in status(s,settings,1)['payments'][0]
+        with pytest.raises(HTTPException) as forbidden:receipts(s,settings,2)
+        assert forbidden.value.status_code==404
+        data=response(paid);data['refunded_amount']={'value':'1999.00','currency':'RUB'}
+        apply_payment(s,paid,data,settings)
+        assert receipts(s,settings,1)[0]['refunded_amount']=='1999.00'
+
+
 def test_checkout_frozen_server_prices_idempotency_and_no_card(db,settings,monkeypatch):
     calls=[]
     def provider(config,method,path,data=None,key=None):
