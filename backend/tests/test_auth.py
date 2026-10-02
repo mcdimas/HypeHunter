@@ -65,6 +65,25 @@ def test_preferences_and_workspace_clear_are_isolated(auth_app):
     assert len(second.get("/api/remixes").json()) == 1
 
 
+def test_live_credentials_do_not_enable_checkout(auth_app, monkeypatch):
+    app, engine = auth_app
+    billing = importlib.import_module('app.billing')
+    settings = app.dependency_overrides[get_settings]()
+    settings.yookassa_shop_id = '1234567'
+    settings.yookassa_secret_key = 'live_fake_secret_not_for_output'
+    settings.yookassa_test_shop_id = ''
+    settings.yookassa_test_secret_key = ''
+    assert settings.yookassa_secret_key not in repr(settings)
+    def unexpected_request(*args, **kwargs):
+        pytest.fail('Live credentials must not trigger any provider request')
+    monkeypatch.setattr(billing, 'provider_request', unexpected_request)
+    client, headers = browser(app)
+    complete_login(app, client, headers, 918241, 'Live disabled test', 9182410)
+    assert client.get('/api/billing/test').json()['available'] is False
+    assert client.post('/api/billing/test/checkout', headers=headers).status_code == 404
+    assert client.post('/api/billing/checkout', headers=headers).status_code == 404
+
+
 def test_yookassa_owner_sandbox_checkout_and_verified_notifications(auth_app, monkeypatch):
     app, engine = auth_app
     billing = importlib.import_module('app.billing')

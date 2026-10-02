@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     email_hourly_limit: int = Field(default=100, ge=1)
     yookassa_test_shop_id: str = ""
     yookassa_test_secret_key: str = Field(default="", repr=False)
+    yookassa_shop_id: str = ""
+    yookassa_secret_key: str = Field(default="", repr=False)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
