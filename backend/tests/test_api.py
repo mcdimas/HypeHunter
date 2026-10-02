@@ -1,4 +1,5 @@
 import os
+import hashlib
 import importlib
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -260,6 +261,7 @@ def test_threads_platform_does_not_collide_with_instagram_and_filters_all_data()
             user_id=1,
             competitor_id=created.json()["id"], platform="threads", external_id="threads:api-test",
             title="A text post", hook="Original text", caption="Original text", author="@buildwithalex",
+            translation_source_hash=hashlib.sha256(b"Original text").hexdigest(),
             search_text="original text @buildwithalex", translated_hook="Русская идея",
             translated_script="Русский текст", translation_status="completed", likes_count=11,
         ))

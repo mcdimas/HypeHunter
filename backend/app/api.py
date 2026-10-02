@@ -18,7 +18,7 @@ from .translation import (
     run_translation_backfill,
     translation_counts,
 )
-from .openai_client import translation_ready
+from .openai_client import translation_ready, translation_model, translation_effort
 from .trial import reserve_trial, trial_user
 from .config import Settings, get_settings
 from .database import get_session
@@ -681,8 +681,8 @@ def _translation_overview(session: Session, settings: Settings, user_id: int) ->
             **counts,
             active=active,
             configured=translation_ready(settings),
-            model=settings.openai_model,
-            reasoning_effort=settings.openai_reasoning_effort,
+            model=translation_model(settings),
+            reasoning_effort=translation_effort(settings),
             batch_size=settings.translation_batch_size,
         ),
         batches=[TranslationBatchRead.model_validate(batch) for batch in batches],

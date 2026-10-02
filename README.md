@@ -21,12 +21,12 @@ Hype Hunter — self-hosted рабочее пространство для Reels
 
 - Frontend: HTML, CSS и обычный JavaScript; без React и frontend-фреймворка.
 - Backend: FastAPI + SQLModel + Alembic, PostgreSQL 17.
-- Интеграции: Apify для импорта, Telegram Bot API для входа, OpenAI Responses API для переводов при отдельной настройке.
+- Интеграции: Apify для импорта, Telegram Bot API для входа, Yandex AI Studio Responses API для переводов при отдельной настройке.
 - Инфраструктура: Docker Compose, Caddy и Nginx. Без Redis, отдельного сервиса авторизации и очереди Celery.
 
 ## Self-hosting: быстрый старт
 
-Нужны Docker Compose, домен с HTTPS и собственный Telegram-бот. Для импорта нужен Apify; переводы требуют серверного OPENAI_API_KEY и явного OPENAI_ENABLED=true.
+Нужны Docker Compose, домен с HTTPS и собственный Telegram-бот. Для импорта нужен Apify; переводы требуют серверных YANDEX_AI_API_KEY, YANDEX_AI_FOLDER_ID, AI_PROVIDER=yandex и явного YANDEX_AI_ENABLED=true. Production использует модель aliceai-llm; OpenAI выключен.
 
 ```bash
 git clone https://github.com/mcdimas/HypeHunter.git

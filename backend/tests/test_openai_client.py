@@ -52,6 +52,26 @@ def test_responses_contract_and_usage(monkeypatch):
     assert json.loads(result.response) == {"translations": []}
 
 
+def test_yandex_contract_no_openai_fallback(monkeypatch):
+    calls = mock_response(monkeypatch, completed())
+    config = Settings(ai_provider="yandex", yandex_ai_enabled=True, yandex_ai_api_key="synthetic-key",
+                      yandex_ai_folder_id="synthetic-folder", openai_enabled=False)
+    result = openai_client.run_ai("source", translation_schema(), config)
+    request = calls[0][0]
+    body = json.loads(request.data)
+    assert request.full_url == "https://ai.api.cloud.yandex.net/v1/responses"
+    assert request.get_header("Authorization") == "Api-Key synthetic-key"
+    assert request.get_header("X-data-logging-enabled") == "false"
+    assert body["model"] == "gpt://synthetic-folder/yandexgpt-5.1"
+    assert "reasoning" not in body and body["store"] is False
+    assert result.response_id == "resp_test"
+    config.yandex_ai_enabled = False
+    config.openai_enabled = True
+    with pytest.raises(RuntimeError):
+        openai_client.run_ai("source", translation_schema(), config)
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize("status", [400, 401, 403, 429, 500])
 def test_http_errors_are_safe_and_not_retried(monkeypatch, status):
     error = HTTPError("https://api.openai.com/v1/responses", status, "sensitive provider error", {}, io.BytesIO(b"test-secret-not-real"))

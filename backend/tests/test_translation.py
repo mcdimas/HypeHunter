@@ -104,7 +104,7 @@ def test_translation_backfill_chunks_reels_and_persists_api_response(monkeypatch
         assert all(reel.translated_script.startswith("Полный перевод") for reel in reels)
 
 
-@pytest.mark.parametrize("mode", ["success", "duplicate", "changed", "failure"])
+@pytest.mark.parametrize("mode", ["success", "duplicate", "changed", "failure", "empty", "changed_failure", "bad_id"])
 def test_api_pipeline_preserves_sources_drafts_and_other_owners(monkeypatch, mode):
     import app.auth
     local_engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -124,21 +124,62 @@ def test_api_pipeline_preserves_sources_drafts_and_other_owners(monkeypatch, mod
         assert "Source B" not in prompt
         if mode == "failure":
             raise RuntimeError("Provider unavailable")
-        if mode == "changed":
+        if mode in ("changed", "changed_failure"):
             with create() as db:
                 reel = db.get(Reel, 10)
                 reel.transcript = "Updated source"
                 db.add(reel)
                 db.commit()
+            if mode == "changed_failure":
+                raise RuntimeError("Provider unavailable")
         item = {"reel_id": 10, "hook": "Хук", "script": "Перевод", "cta": ""}
+        if mode == "empty":
+            item["script"] = "  "
+        if mode == "bad_id":
+            item["reel_id"] = 10.0
         return TranslationResult(0, "", "", json.dumps({"translations": [item, item] if mode == "duplicate" else [item]}))
     run_translation_backfill(Settings(database_url="sqlite://"), create, runner, user_id=10)
     with create() as db:
         reel = db.get(Reel, 10)
-        assert reel.transcript == ("Updated source" if mode == "changed" else "Source A")
+        assert reel.transcript == ("Updated source" if mode in ("changed", "changed_failure") else "Source A")
         assert db.get(Reel, 11).translation_status == "pending"
         assert not db.get(Reel, 11).translated_script
         assert db.exec(select(Remix)).one().script == "My own edit"
-        assert reel.translation_status == {"success": "completed", "duplicate": "failed", "failure": "failed", "changed": "pending"}[mode]
+        assert reel.translation_status == {"success": "completed", "duplicate": "failed", "failure": "failed", "changed": "pending", "empty": "failed", "changed_failure": "pending", "bad_id": "failed"}[mode]
         if mode != "success":
             assert not reel.translated_script
+
+
+def test_full_source_hash_detects_long_tail():
+    from app.services import source_text_hash, original_reel_fields
+    reel = Reel(user_id=1, competitor_id=1, external_id="long", title="Long", hook="Hook",
+                author="@test", transcript="A" * 12000 + "old ending")
+    before = source_text_hash(reel)
+    assert len(original_reel_fields(reel)[1]) > 12000
+    reel.transcript = "A" * 12000 + "new ending"
+    assert source_text_hash(reel) != before
+
+
+def test_provider_failure_stops_remaining_batches(monkeypatch):
+    import app.auth
+    from app.openai_client import AIProviderError
+    local = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    SQLModel.metadata.create_all(local)
+    monkeypatch.setattr(app.auth, "engine", local)
+    create = lambda: Session(local)
+    with create() as db:
+        db.add(User(id=1, display_name="Test"))
+        db.add(Competitor(id=1, user_id=1, handle="@test", profile_url="https://example.com"))
+        for n in (1, 2):
+            db.add(Reel(id=n, user_id=1, competitor_id=1, external_id=str(n), title="Test",
+                        hook="Test", author="@test", transcript="English source"))
+        db.commit()
+    calls = []
+    def runner(*args):
+        calls.append(1)
+        raise AIProviderError("Provider access denied")
+    run_translation_backfill(Settings(database_url="sqlite://", translation_batch_size=1), create, runner, user_id=1)
+    assert len(calls) == 1
+    with create() as db:
+        assert db.get(Reel, 1).translation_status == "failed"
+        assert db.get(Reel, 2).translation_status == "pending"

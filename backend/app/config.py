@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     apify_max_charge_usd: float = 1.10
     apify_profile_max_charge_usd: float = 0.05
     openai_api_key: str = Field(default="", repr=False)
+    ai_provider: Literal["openai", "yandex"] = "openai"
+    yandex_ai_api_key: str = Field(default="", repr=False)
+    yandex_ai_folder_id: str = ""
+    yandex_ai_enabled: bool = False
+    yandex_ai_model: str = "yandexgpt-5.1"
     openai_enabled: bool = False
     openai_model: str = "gpt-5.6-luna"
     openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "high"

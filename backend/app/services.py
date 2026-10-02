@@ -74,7 +74,7 @@ def original_reel_fields(reel: Reel) -> tuple[str, str, str]:
     ]
     hook = (sentences[0] if sentences else script)[:4000]
     cta = (sentences[-1] if len(sentences) > 1 else "")[:4000]
-    return hook, script[:12000], cta
+    return hook, script, cta
 
 
 def source_text_hash(reel: Reel) -> str:
@@ -108,7 +108,8 @@ def mark_russian_source_ready(reel: Reel) -> bool:
 
 def source_remix_fields(reel: Reel) -> tuple[str, str, str]:
     """Never present an untranslated source as a Russian working copy."""
-    if reel.translation_status == "completed" and (reel.translated_script or "").strip():
+    if (reel.translation_status == "completed" and (reel.translated_script or "").strip()
+            and reel.translation_source_hash == source_text_hash(reel)):
         return (
             (reel.translated_hook or "")[:4000],
             (reel.translated_script or "")[:12000],

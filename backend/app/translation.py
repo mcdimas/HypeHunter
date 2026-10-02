@@ -7,7 +7,7 @@ from sqlalchemy import func, or_, text
 from sqlmodel import Session, select
 
 from .auth import _rate_limit
-from .openai_client import TranslationResult, run_openai, translation_ready
+from .openai_client import TranslationResult, AIProviderError, run_ai, translation_ready, translation_model, translation_effort
 from .config import Settings, get_settings
 from .database import engine
 from .models import Reel, TranslationBatch
@@ -90,6 +90,13 @@ def build_translation_prompt(reels: list[Reel]) -> str:
 - cta: дословный перевод исходного CTA; если исходный CTA пустой, верни пустую строку.
 
 Сохрани исходный смысл, порядок предложений, имена, числа и термины. Не добавляй комментарии вне JSON.
+Названия продуктов и инструментов не переводятся: Claude Code остаётся Claude Code, а не «код Claude».
+Термины переводи с учётом контекста видео: shot — кадр или сцена, не фотография;
+multi-shot generation — генерация нескольких связанных сцен; weights — веса модели.
+В контексте видеомонтажа cuts — монтажные склейки, production-grade edits — монтаж профессионального уровня.
+Кодовое слово, которое предлагается написать в комментариях (Claude, LTX, video и т. п.),
+сохраняй в исходном написании во всех полях, не переводи его и не заменяй транслитерацией.
+Не исправляй предполагаемые ошибки расшифровки догадками и не добавляй рекламные обещания.
 Разбивка на хук, скрипт и CTA обязательна. Верни ровно {len(source_items)} объектов и сохрани reel_id.
 
 SOURCE_REELS_JSON:
@@ -133,7 +140,7 @@ def _run_translation_backfill(
 ) -> None:
     settings = settings_override or get_settings()
     create_session = session_factory or _session_factory
-    runner = api_runner or run_openai
+    runner = api_runner or run_ai
     if api_runner is None and not translation_ready(settings):
         return
 
@@ -163,8 +170,8 @@ def _run_translation_backfill(
                 status="running",
                 reel_ids=[reel.id for reel in reels],
                 item_count=len(reels),
-                model=settings.openai_model,
-                reasoning_effort=settings.openai_reasoning_effort,
+                model=translation_model(settings),
+                reasoning_effort=translation_effort(settings),
                 prompt=prompt,
                 started_at=now,
                 updated_at=now,
@@ -184,6 +191,7 @@ def _run_translation_backfill(
             )
             session.commit()
             batch_id = batch.id
+            reel_ids = list(hashes)
 
         result: TranslationResult | None = None
         try:
@@ -196,15 +204,22 @@ def _run_translation_backfill(
             if not result.response.strip():
                 raise RuntimeError("AI завершился без итогового ответа")
             decoded = json.loads(result.response)
-            translations = decoded.get("translations")
+            translations = decoded.get("translations") if isinstance(decoded, dict) else None
             if not isinstance(translations, list):
                 raise ValueError("В ответе AI отсутствует массив translations")
-            by_id = {item.get("reel_id"): item for item in translations if isinstance(item, dict)}
+            if any(not isinstance(item, dict) or type(item.get("reel_id")) is not int for item in translations):
+                raise ValueError("AI вернул некорректные идентификаторы материалов")
+            by_id = {item["reel_id"]: item for item in translations}
             expected_ids = set(reel_ids)
             if len(translations) != len(expected_ids) or set(by_id) != expected_ids:
                 raise ValueError(
-                    f"AI вернул reel_id {sorted(by_id)}, ожидались {sorted(expected_ids)}"
+                    "AI вернул неполный пакет или повторяющиеся идентификаторы материалов"
                 )
+            for item in translations:
+                if not all(isinstance(item.get(key), str) for key in ("hook", "script", "cta")):
+                    raise ValueError("Поля перевода должны быть строками")
+                if not item["hook"].strip() or not item["script"].strip():
+                    raise ValueError("AI вернул пустой перевод. Исходный текст сохранён.")
 
             with create_session() as session:
                 batch = session.get(TranslationBatch, batch_id)
@@ -212,12 +227,13 @@ def _run_translation_backfill(
                     continue
                 translated_count = 0
                 for reel_id in reel_ids:
-                    reel = session.get(Reel, reel_id)
+                    reel = session.exec(select(Reel).where(Reel.id == reel_id, Reel.user_id == user_id).with_for_update()).first()
                     item = by_id[reel_id]
                     if not reel or reel.user_id != user_id:
                         continue
                     if source_hash(reel) != hashes[reel_id]:
-                        reel.translation_status = "pending"
+                        if reel.translation_status == "running":
+                            reel.translation_status = "pending"
                         session.add(reel)
                         continue
                     values = [item.get("hook"), item.get("script"), item.get("cta")]
@@ -227,8 +243,8 @@ def _run_translation_backfill(
                     reel.translation_status = "completed"
                     reel.translation_error = None
                     reel.translation_source_hash = source_hash(reel)
-                    reel.translation_model = settings.openai_model
-                    reel.translation_reasoning_effort = settings.openai_reasoning_effort
+                    reel.translation_model = translation_model(settings)
+                    reel.translation_reasoning_effort = translation_effort(settings)
                     reel.translated_at = utc_now()
                     reel.updated_at = utc_now()
                     session.add(reel)
@@ -246,7 +262,7 @@ def _run_translation_backfill(
                     "translation.batch_completed",
                     "translation_batch",
                     batch.id,
-                    {"translated_count": translated_count, "provider": "openai", "response_id": result.response_id, "usage": result.usage},
+                    {"translated_count": translated_count, "provider": settings.ai_provider, "response_id": result.response_id, "usage": result.usage},
                 )
                 session.commit()
         except Exception as error:
@@ -254,7 +270,8 @@ def _run_translation_backfill(
                 batch = session.get(TranslationBatch, batch_id)
                 if not batch or batch.user_id != user_id:
                     continue
-                message = str(error)[-4000:]
+                message = (str(error)[-4000:] if isinstance(error, (AIProviderError, ValueError))
+                           else "Не удалось завершить перевод. Исходный текст сохранён.")
                 batch.status = "failed"
                 batch.error_message = message
                 if result is not None:
@@ -265,10 +282,14 @@ def _run_translation_backfill(
                 batch.updated_at = utc_now()
                 session.add(batch)
                 for reel_id in reel_ids:
-                    reel = session.get(Reel, reel_id)
+                    reel = session.exec(select(Reel).where(Reel.id == reel_id, Reel.user_id == user_id).with_for_update()).first()
                     if reel and reel.user_id == user_id:
-                        reel.translation_status = "failed"
-                        reel.translation_error = message
+                        if source_hash(reel) == hashes[reel_id]:
+                            reel.translation_status = "failed"
+                            reel.translation_error = message
+                        elif reel.translation_status == "running":
+                            reel.translation_status = "pending"
+                            reel.translation_error = None
                         session.add(reel)
                 record_event(
                     session,
@@ -278,6 +299,8 @@ def _run_translation_backfill(
                     {"error": message},
                 )
                 session.commit()
+            if isinstance(error, AIProviderError):
+                break
 
 
 def translation_counts(session: Session, user_id: int) -> dict[str, int]:
