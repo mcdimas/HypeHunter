@@ -85,7 +85,7 @@ function accountPage() {
   const tabs=[["profile","Профиль"],["subscription","Подписка и лимиты"],["scenarios","Настройки сценариев"],["notifications","Уведомления"],["security","Вход и безопасность"],["danger","Опасная зона"]];
   return shell(`<div class="account-content"><header class="page-header"><div><span class="eyebrow">Личный кабинет</span><h1>Профиль</h1><p>Ваши данные и доступ к Hype Hunter.</p></div></header>
     <nav class="account-tabs" aria-label="Разделы профиля">${tabs.map(([key,label])=>`<a href="/account${key==='profile'?'':'?tab='+key}" data-route ${tab===key?'aria-current="page"':''}>${label}</a>`).join('')}</nav>
-    ${tab==='security'?accountSecurity():tab==='subscription'?testBillingMarkup()+accountSubscription():tab==='scenarios'?accountPreferencesForm(false):tab==='notifications'?accountPreferencesForm(true):tab==='danger'?accountDanger():accountDetails()+accountAppearance()}
+    ${tab==='security'?accountSecurity():tab==='subscription'?accountSubscription():tab==='scenarios'?accountPreferencesForm(false):tab==='notifications'?accountPreferencesForm(true):tab==='danger'?accountDanger():accountDetails()+accountAppearance()}
     <section class="account-id-strip"><div><strong>ID вашего аккаунта</strong><p>Поможет найти аккаунт при обращении за помощью.</p></div><button class="account-id" type="button" data-action="copy-account-id" aria-label="Скопировать ID аккаунта ${state.user.id}"><span>ID</span> ${state.user.id} ${icon("copy")}</button></section>
     <section class="account-exit"><div><h2>Выйти из аккаунта</h2><p>Завершить сеанс только на этом устройстве.</p></div><button class="button secondary" type="button" data-action="logout">${icon("sign-out")}Выйти</button></section>
     </div>`,"account-workspace");
@@ -93,30 +93,6 @@ function accountPage() {
 
 function accountAppearance() {
   return `<section class="account-panel">${accountHeading("Оформление","Выбор темы сохраняется в этом браузере.","sun")}<div class="preference-segments">${[['dark','moon','Тёмная'],['light','sun','Светлая']].map(([theme,symbol,label])=>`<button type="button" data-theme="${theme}" aria-pressed="${currentTheme()===theme}">${icon(symbol)}${label}</button>`).join('')}</div></section>`;
-}
-
-function testBillingMarkup() {
-  if(!state.testBilling?.owner&&!state.testBilling?.available)return '';
-  if(!state.testBilling.available)return `<section class="account-panel test-billing"><h2>Тестовая подписка — 1 ₽</h2><p role="status">Настройки тестового магазина ЮKassa пока не готовы. Для запуска нужны корректные shopId и секретный ключ из одного тестового магазина.</p><button class="button primary" type="button" disabled>Тестовая подписка — 1 ₽</button><p class="muted">Реальные деньги не списываются. Автопродления нет.</p></section>`;
-  const payment=state.testBilling.payment;
-  const labels={pending:'Ожидает оплаты',waiting_for_capture:'Ожидает подтверждения ЮKassa',succeeded:'Тестовая оплата прошла',canceled:'Тестовая оплата отменена'};
-  return `<section class="account-panel test-billing"><h2>Тестовая подписка — 1 ₽</h2><p>Только для проверки ЮKassa. Реальные деньги не списываются. Используйте тестовую карту, не настоящую.</p><p>Без автопродления. Тест не меняет ваш тариф, бесплатный лимит и материалы.</p>${payment?`<p class="test-payment-status" role="status">${labels[payment.status]||'Проверяем платёж…'}${payment.test_access_until?` · Тестовый период до ${formatDateTime(payment.test_access_until)}`:''}</p>`:''}<div class="test-billing-actions"><button class="button primary" type="button" data-action="test-checkout" ${state.billingBusy?'disabled':''}>${state.billingBusy?'Подождите…':payment?.status==='pending'?'Продолжить тестовую оплату — 1 ₽':'Тестовая подписка — 1 ₽'}</button>${payment?`<button class="button secondary" type="button" data-action="test-payment-refresh" ${state.billingBusy?'disabled':''}>Проверить статус</button>`:''}</div><p class="muted">Тестовая карта: 5555 5555 5555 4444 · срок 12/30 · CVC 123. Настоящий чек НПД в этом режиме не формируется.</p></section>`;
-}
-
-async function beginTestCheckout() {
-  if(state.billingBusy||!state.testBilling?.available)return;
-  state.billingBusy=true;render();
-  try {const result=await apiRequest('/billing/test/checkout',{method:'POST'});state.testBilling.payment=result;if(result.confirmation_url){location.assign(result.confirmation_url);return;}showToast(result.status==='succeeded'?'Тестовая оплата подтверждена':'Платёж завершён. Для новой попытки нажмите кнопку ещё раз.');}
-  catch(error){showToast(error.message,'error');}
-  finally {state.billingBusy=false;render();}
-}
-
-async function refreshTestPayment() {
-  if(state.billingBusy||!state.testBilling?.payment)return;
-  state.billingBusy=true;render();
-  try {const result=await apiRequest('/billing/test/payments/'+encodeURIComponent(state.testBilling.payment.id)+'/refresh',{method:'POST'});state.testBilling.payment=result;showToast(result.status==='succeeded'?'Тестовая оплата подтверждена':result.status==='canceled'?'Тестовая оплата отменена':'ЮKassa пока ожидает оплату');}
-  catch(error){showToast(error.message,'error');}
-  finally {state.billingBusy=false;render();}
 }
 
 function accountSubscription() {

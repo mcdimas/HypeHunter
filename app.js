@@ -15,7 +15,7 @@ function cancelledRequest() { return new DOMException("", "AbortError"); }
 function restoredReturnPath() { try { const id=sessionStorage.getItem("auth-user-id"), value=sessionStorage.getItem(`editor-return:${id}`); return value && /^\/(library|content-plan)(\?|$)/.test(value) ? value : "/content-plan"; } catch { return "/content-plan"; } }
 function recoveryKey(slug) { return `draft:${state.user?.id}:${slug}`; }
 function clearAccountMemory() {
-  state.emailLogin=null;state.trial=null;state.preferences=null;state.testBilling=null;state.billingBusy=false;state.accountMenuOpen=false;
+  state.emailLogin=null;state.trial=null;state.preferences=null;state.accountMenuOpen=false;
   clearTimeout(importPollTimer);clearTimeout(authPollTimer);clearTimeout(draftTimer);clearTimeout(searchTimer);
   accountVersion++;requestId++;routeRequestId++;loginAttempt++;
   toastRegion.replaceChildren();
@@ -114,7 +114,7 @@ async function loadRouteData(){
   routeAccess();
   if(state.route!=="/login"){loginAttempt++;clearTimeout(authPollTimer);state.authChallenge=null;state.emailLogin=null;state.authStatus="";state.authBusy=false;}
   if(state.route==="/"||!state.user){render();return;}
-  if(state.route==="/account"){const [sessions,preferences,trial,billing]=await Promise.all([apiRequest("/auth/sessions"),apiRequest("/auth/preferences"),apiRequest("/trial"),apiRequest("/billing/test")]);if(id!==routeRequestId)return;state.sessions=sessions;state.preferences=preferences;state.trial=trial;state.testBilling=billing;render();const returned=new URLSearchParams(location.search).get('test_payment');if(billing.available&&returned&&returned===billing.payment?.id)await refreshTestPayment();}
+  if(state.route==="/account"){const [sessions,preferences,trial]=await Promise.all([apiRequest("/auth/sessions"),apiRequest("/auth/preferences"),apiRequest("/trial")]);if(id!==routeRequestId)return;state.sessions=sessions;state.preferences=preferences;state.trial=trial;render();}
   else if(state.route==="/library")await loadReels();
   else if(state.route==="/competitors"){await Promise.all([loadCompetitors(),loadImports(),loadTranslations()]);if(id!==routeRequestId)return;render();scheduleImportPolling();}
   else if(state.route==="/content-plan"){await loadRemixes();if(id!==routeRequestId)return;render();}
@@ -218,8 +218,6 @@ app.addEventListener("click",async event=>{
     if(target.dataset.planFormatTab){state.planFormat=target.dataset.planFormatTab;history.replaceState({},"",planURL());render();return;}
     if(target.dataset.importPlatformTab){state.importPlatform=target.dataset.importPlatformTab;render();return;}
     const action=target.dataset.action;
-    if(action==='test-checkout'){await beginTestCheckout();return;}
-    if(action==='test-payment-refresh'){await refreshTestPayment();return;}
     if(action==="link-yandex"){await beginYandexLogin("link");return;}
     if(action==="toggle-nav"||action==="close-nav"){state.mobileNav=action==="toggle-nav"?!state.mobileNav:false;render();}
     else if(action==="logout"||action==="logout-all"){

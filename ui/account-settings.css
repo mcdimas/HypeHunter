@@ -13,7 +13,6 @@
 .preferences-notice{display:flex;align-items:flex-start;gap:10px;color:var(--muted);font-size:14px;line-height:1.6;margin-top:24px}.preferences-notice .ph{font-size:20px;color:var(--link);padding-top:2px}.account-danger{border-color:var(--danger);background:color-mix(in srgb,var(--danger) 7%,var(--surface))}.account-danger>p{color:var(--muted);line-height:1.6;margin:12px 0 20px}.account-danger summary{display:inline-flex;color:var(--danger);cursor:pointer}.account-danger form{max-width:520px;padding-top:24px}.account-danger label{display:block;margin-bottom:10px}.account-danger form p{margin:12px 0;color:var(--muted);font-size:14px}.account-danger .danger{background:var(--danger);color:var(--bg)}
 .theme-public-button{position:absolute;right:24px;top:28px}.auth-entry{position:relative}
 .sidebar-foot .sidebar-avatar span{color:#fff}
-.test-billing{border-color:var(--accent)}.test-billing>p{margin-top:12px;color:var(--muted);line-height:1.6}.test-billing-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}.test-billing .test-payment-status{color:var(--text)}
 @media(max-width:1100px){.account-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:600px){.account-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.account-plans{grid-template-columns:1fr}.preference-segments span{font-size:12px;padding:12px 5px}.preference-switch{gap:12px}.preference-switch strong{font-size:15px}}
 @media(prefers-reduced-motion:reduce){.switch-track:after{transition:none}}
