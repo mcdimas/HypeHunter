@@ -144,6 +144,10 @@ class Notice(BaseModel):
 
 @router.post("/yookassa/test/webhook")
 def notification(payload: Notice, session: Session = Depends(get_session), settings: Settings = Depends(get_settings)):
+    # Compatibility with the existing URL registered in the shop. Live orders
+    # are independently verified with live credentials, never sandbox keys.
+    from .live_billing import handle_notice
+    handle_notice(payload, session, settings)
     if payload.type != "notification" or payload.event not in {"payment.succeeded", "payment.canceled"}:
         return {"received": True}
     payment_id = payload.object.get("id", "")

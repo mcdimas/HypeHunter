@@ -52,6 +52,12 @@ function landingConnect(classes="primary", arrow=true) {
   return `<a class="button ${classes}" href="${state.user?"/today":"/login"}" data-route>${state.user?"Открыть приложение":"Подключиться"}${arrow?icon("arrow-right"):""}</a>`;
 }
 
+function landingPlanConnect(featured){
+  const target='/account?tab=subscription&plan='+(featured?'pro':'start');
+  const href=state.user?target:'/login?return_to='+encodeURIComponent(target);
+  return `<a class="button ${featured?'primary':'secondary'}" href="${escapeHtml(href)}" data-route>Выбрать тариф</a>`;
+}
+
 function landingFormatTabs() {
   return `<div class="landing-format-tabs" role="tablist" aria-label="Формат примера">${Object.entries(LANDING_EXAMPLES).map(([key,item])=>`<button id="example-tab-${key}" role="tab" type="button" aria-selected="${landingFormat===key}" aria-controls="landing-example-panel" tabindex="${landingFormat===key?0:-1}" data-landing-format="${key}">${icon(item.icon)}${item.label}</button>`).join("")}</div>`;
 }
@@ -106,9 +112,9 @@ function landingPage() {
       </section>
       <section class="landing-economy landing-container landing-reveal"><div><span class="landing-kicker">Больше времени на ваш бизнес</span><h2>Идеи и тексты.<br>Без отдельного продюсера.</h2><p>Оставьте себе съёмку, экспертизу и общение с клиентами. Поиск референсов, перевод и работу над сценарием соберите в Hype Hunter.</p></div><div class="landing-costs"><div><span>Работа продюсера</span><strong>от 80 000 <small>₽/мес.</small></strong></div><div class="landing-cost-product"><span>Hype Hunter</span><strong>от 1 999 <small>₽/мес.</small></strong></div></div></section>
       <section class="landing-section landing-container" id="pricing"><header class="landing-section-heading landing-reveal"><h2>Выберите свой темп</h2><p>Один инструмент для Reels и Threads.<br>От первых идей до регулярного контента.</p></header><div class="landing-pricing landing-reveal">${[
-        {name:"Старт",price:"1 999",description:"Для первых регулярных публикаций",limit:"40 материалов в месяц",featured:false},
-        {name:"Про",price:"3 900",description:"Для активной работы с контентом",limit:"100 материалов в месяц",featured:true}
-      ].map(plan=>`<article class="landing-price-card ${plan.featured?'featured':''}"><div class="landing-plan-title"><h3>${plan.name}</h3>${plan.featured?'<span>Больше материалов</span>':''}</div><p class="landing-plan-description">${plan.description}</p><p class="landing-price">${plan.price}<span>₽/мес.</span></p><ul>${[plan.limit,"Reels и Threads в одной библиотеке","Перевод и редактор своих текстов","Доска и календарь публикаций"].map(feature=>`<li>${icon("check")} ${feature}</li>`).join("")}</ul>${landingConnect(plan.featured?'primary':'secondary',false)}</article>`).join("")}</div><p class="landing-pricing-note">Подписки и оплата готовятся к запуску. Сейчас кнопка открывает регистрацию; деньги не списываются. Объёмы указаны для будущих тарифов.</p></section>
+        {name:"Старт",price:"1 999",description:"Для первых регулярных публикаций",limit:"40 новых материалов за 30 дней",featured:false},
+        {name:"Про",price:"3 900",description:"Для активной работы с контентом",limit:"100 новых материалов за 30 дней",featured:true}
+      ].map(plan=>`<article class="landing-price-card ${plan.featured?'featured':''}"><div class="landing-plan-title"><h3>${plan.name}</h3>${plan.featured?'<span>Больше материалов</span>':''}</div><p class="landing-plan-description">${plan.description}</p><p class="landing-price">${plan.price}<span>₽ / 30 дней</span></p><ul>${[plan.limit,"Reels и Threads в одной библиотеке","Перевод и редактор своих текстов","Доска и календарь публикаций"].map(feature=>`<li>${icon("check")} ${feature}</li>`).join("")}</ul>${landingPlanConnect(plan.featured)}</article>`).join("")}</div><p class="landing-pricing-note">Разовая оплата за 30 дней. Без сохранения карты и автосписаний. Остаток лимита не переносится; новый пакет можно оплатить после окончания текущего периода.</p></section>
       <section class="landing-faq landing-container landing-reveal" aria-labelledby="faq-title"><h2 id="faq-title">Коротко о главном</h2><div>${[
         ["Какие публикации я получу?","Последние материалы выбранного аккаунта. Их можно отсортировать по доступным показателям и найти лучшие в загруженной выборке. Это не поиск по всей истории конкурента."],
         ["Можно работать только с Threads?","Да. У текстовых публикаций есть оригинал, доступные реакции и отдельный путь редактирования. Текст можно доработать для Threads или использовать как идею Reels."],

@@ -49,6 +49,29 @@ class TestPayment(SQLModel, table=True):
     test_access_until: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
 
 
+class Payment(SQLModel, table=True):
+    """A single paid 30-day package, never a recurring authorization."""
+    __tablename__ = "payments"
+    id: str = Field(primary_key=True, max_length=36)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    provider_id: str | None = Field(default=None, unique=True, max_length=80)
+    status: str = Field(default="pending", max_length=32)
+    plan: str = Field(max_length=16)
+    amount: str = Field(max_length=16)
+    quota: int
+    used: int = Field(default=0)
+    receipt_email: str = Field(max_length=254)
+    buyer_inn: str = Field(default="", max_length=12)
+    offer_version: str = Field(max_length=32)
+    confirmation_url: str | None = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    access_from: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    access_until: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    refunded_amount: str = Field(default="0.00", max_length=16)
+    revoked_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    checked_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+
+
 class LoginSession(SQLModel, table=True):
     __tablename__ = "auth_sessions"
 
@@ -228,6 +251,7 @@ class ImportJob(SQLModel, table=True):
     status: str = Field(default="waiting_for_token", max_length=32, index=True)
     requested_count: int = Field(default=20, ge=1, le=100)
     trial_reels_limit: int | None = Field(default=None)
+    payment_id: str | None = Field(default=None, foreign_key="payments.id", max_length=36)
     imported_count: int = Field(default=0, ge=0)
     error_message: str | None = Field(default=None, sa_column=Column(Text))
     actor_run_id: str | None = Field(default=None, max_length=128)

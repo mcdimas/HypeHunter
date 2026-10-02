@@ -16,6 +16,7 @@ from .config import Settings, get_settings
 from .database import engine
 from .models import Competitor, ImportJob, Reel
 from .trial import trial_user
+from .live_billing import active_package
 from .services import mark_russian_source_ready, record_event, utc_now
 
 
@@ -590,10 +591,13 @@ def run_apify_import(
             # Serialize cancellation/deletion with saving + quota consumption.
             _raise_if_cancelled(session, job)
             if trial_limit is not None:
-                remaining = max(0, (quota_user.trial_reels_limit or 0) - quota_user.trial_reels_used)
+                paid = active_package(session, job.user_id) if job.payment_id else None
+                if job.payment_id and (paid is None or paid.id != job.payment_id):
+                    raise RuntimeError("Оплаченный период завершён или платёж возвращён. Новые материалы не сохранены.")
+                remaining = max(0, paid.quota-paid.used) if paid else max(0, (quota_user.trial_reels_limit or 0) - quota_user.trial_reels_used)
                 normalized = normalized[:min(trial_limit, remaining)]
                 if not normalized:
-                    raise RuntimeError("Лимит бесплатных Reels исчерпан.")
+                    raise RuntimeError("Лимит материалов исчерпан.")
             imported_ids = []
             new_count = 0
             for values in normalized:
@@ -643,8 +647,12 @@ def run_apify_import(
             _raise_if_cancelled(session, job)
             imported_at = utc_now()
             if trial_limit is not None:
-                quota_user.trial_reels_used += new_count
-                session.add(quota_user)
+                if job.payment_id:
+                    paid.used += new_count
+                    session.add(paid)
+                else:
+                    quota_user.trial_reels_used += new_count
+                    session.add(quota_user)
             competitor.avatar_url = cached_avatar or profile_avatar_url or competitor.avatar_url
             competitor.last_import_at = imported_at
             competitor.updated_at = imported_at

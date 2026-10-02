@@ -96,8 +96,43 @@ function accountAppearance() {
 }
 
 function accountSubscription() {
-  const trial=state.trial, early=trial?.limit===null;
-  return `<section class="account-panel plan-current"><h2>${early?'Ранний доступ':'Бесплатный'} <span class="plan-tag">Текущий тариф</span></h2><p>${early?'Для вашего существующего аккаунта сохранены прежние условия доступа.':trial?`Использовано ${trial.used} из ${trial.limit} бесплатных роликов · Осталось ${trial.remaining}`:'Загружаем лимиты…'}</p>${!early&&trial?`<progress value="${trial.used}" max="${trial.limit}" aria-label="Использовано бесплатных роликов"></progress><p class="muted">Лимит выдаётся один раз после регистрации и не сбрасывается при удалении материалов.</p>`:''}</section><div class="account-plans">${[['Старт','Для первых проб','1 999',40],['Про','Для ежедневной работы','3 900',100]].map(([name,desc,price,count],i)=>`<section class="account-panel pricing-option ${i?'recommended':''}">${i?'<span class="recommended-label">Рекомендуем</span>':''}<h2>${name}</h2><p>${desc}</p><div class="account-price">${price} <span>₽/мес</span></div><ul>${[`${count} материалов в месяц`,'Reels и Threads в одной библиотеке','Перевод и редактор своих текстов','Доска и календарь публикаций'].map(feature=>`<li>${icon('check-circle')}${feature}</li>`).join('')}</ul><button class="button ${i?'primary':'secondary'}" disabled>Оплата скоро</button></section>`).join('')}</div><p class="account-note">Подключение оплаты через ЮKassa готовится. Сейчас платные тарифы недоступны, деньги не списываются.</p>`;
+  const trial=state.trial, early=trial?.limit===null, billing=state.billing, paid=billing?.subscription;
+  return `<section class="account-panel plan-current"><h2>${paid?(paid.plan==='pro'?'Про':'Старт'):early?'Ранний доступ':'Бесплатный'} <span class="plan-tag">Текущий тариф</span></h2><p>${paid?`Оплачено до ${formatDateTime(paid.access_until)}. Использовано ${paid.used} из ${paid.quota} материалов. Осталось ${Math.max(0,paid.quota-paid.used)}.`:early?'Для вашего существующего аккаунта сохранены прежние условия доступа.':trial?`Использовано ${trial.used} из ${trial.limit} бесплатных роликов · Осталось ${trial.remaining}`:'Загружаем лимиты…'}</p><p class="muted">Без автосписаний. Удаление материалов не восстанавливает лимит. Переводы и черновики сохраняются после окончания доступа.</p></section>
+    <div class="account-plans">${[['start','Старт','Для первых проб','1 999',40],['pro','Про','Для ежедневной работы','3 900',100]].map(([key,name,desc,price,count],i)=>`<section class="account-panel pricing-option ${i?'recommended':''}">${i?'<span class="recommended-label">Рекомендуем</span>':''}<h2>${name}</h2><p>${desc}</p><div class="account-price">${price} <span>₽ / 30 дней</span></div><ul>${[`${count} новых материалов за 30 дней`,'Reels и Threads в одной библиотеке','Перевод и редактор своих текстов','Доска и календарь публикаций'].map(feature=>`<li>${icon('check-circle')}${feature}</li>`).join('')}</ul><button class="button ${i?'primary':'secondary'}" type="button" data-action="choose-plan" data-plan="${key}" ${!billing?.available||paid||state.billingBusy?'disabled':''}>${paid?'Доступ уже оплачен':billing?.available?'Подключить':'Оплата недоступна'}</button></section>`).join('')}</div>
+    ${paid?'<p class="account-note">Новый пакет можно приобрести после окончания оплаченного периода. Неиспользованные материалы не переносятся.</p>':'<p class="account-note">Разовый платёж на 30 дней. Карту не сохраняем. Для продления нужно оплатить новый пакет самостоятельно.</p>'}
+    ${state.checkoutPlan&&!paid&&billing?.available?checkoutForm():''}
+    ${billing?.payments?.length?`<section class="account-panel"><h2>Ваши платежи</h2>${billing.payments.map(p=>`<div class="account-session"><div class="session-copy"><strong>${p.plan==='pro'?'Про':'Старт'} · ${Number(p.amount).toLocaleString('ru-RU')} ₽</strong><p>${escapeHtml(({pending:'Ожидает оплаты',waiting_for_capture:'Ожидает подтверждения',succeeded:'Оплачен',canceled:'Отменён',refunded:'Возвращён'})[p.status]||'Проверяем')} · ${formatDateTime(p.created_at)}</p><small>ID: ${escapeHtml(p.id)}</small></div>${p.status==='pending'&&p.confirmation_url?`<a class="button secondary compact" href="${escapeHtml(p.confirmation_url)}" rel="noreferrer">Продолжить оплату</a>`:''}<button class="button secondary compact" type="button" data-action="refresh-payment" data-payment-id="${escapeHtml(p.id)}" ${state.billingBusy?'disabled':''}>Проверить</button></div>`).join('')}<p class="muted">Чек самозанятого отправляет исполнитель на указанный при оплате email. По вопросам оплаты: <a href="mailto:demichev4work@ya.ru">demichev4work@ya.ru</a>.</p></section>`:''}`;
+}
+
+function checkoutForm(){
+  const plan=state.billing.plans[state.checkoutPlan];
+  return `<section class="account-panel"><h2>${escapeHtml(plan.name)} на 30 дней</h2><form data-checkout-form><div class="account-fields"><label>Email для чека<input name="receipt_email" type="email" autocomplete="email" maxlength="254" required value="${escapeHtml(state.user?.email||'')}" /></label><label>ИНН организации или ИП (если платите для бизнеса)<input name="buyer_inn" inputmode="numeric" pattern="[0-9]{10}|[0-9]{12}" maxlength="12" /></label></div><p class="muted">Этот email используется только для чека и не привязывается как способ входа.</p><label class="billing-consent"><input name="accept_offer" type="checkbox" required />Принимаю <a href="/legal/offer/" target="_blank" rel="noopener">оферту</a>: ${Number(plan.amount).toLocaleString('ru-RU')} ₽ за 30 дней и ${plan.quota} новых материалов. Без автопродления и автосписаний.</label><p class="form-error" role="alert" data-billing-error></p><button class="button primary" type="submit" ${state.billingBusy?'disabled':''}>${state.billingBusy?'Подождите…':'Перейти к оплате'}</button></form></section>`;
+}
+
+async function beginCheckout(form){
+  if(state.billingBusy)return;
+  const uid=state.user.id, data=new FormData(form), button=form.querySelector('[type="submit"]');
+  state.billingBusy=true;button.disabled=true;form.querySelector('[data-billing-error]').textContent='';
+  try{
+    const order=await apiRequest('/billing/checkout',{method:'POST',body:JSON.stringify({plan:state.checkoutPlan,receipt_email:String(data.get('receipt_email')||''),buyer_inn:String(data.get('buyer_inn')||''),accept_offer:data.has('accept_offer'),offer_version:state.billing.offer_version})});
+    if(state.user?.id!==uid)return;
+    if(order.confirmation_url)location.href=order.confirmation_url;
+    else{await refreshPayment(order.id);}
+  }catch(error){if(state.user?.id===uid){form.querySelector('[data-billing-error]').textContent=error.message;state.billing=await apiRequest('/billing/status').catch(()=>state.billing);}}
+  finally{if(state.user?.id===uid){state.billingBusy=false;button.disabled=false;}}
+}
+
+async function refreshPayment(id){
+  const uid=state.user?.id;
+  state.billingBusy=true;
+  try{
+    const result=await apiRequest(`/billing/payments/${encodeURIComponent(id)}/refresh`,{method:'POST'});
+    const [billing,trial]=await Promise.all([apiRequest('/billing/status'),apiRequest('/trial')]);
+    if(state.user?.id!==uid)return;
+    state.billing=billing;state.trial=trial;state.checkoutPlan=null;
+    showToast(result.status==='succeeded'?'Оплата подтверждена. Доступ открыт.':result.status==='canceled'?'Платёж отменён.':result.status==='refunded'?'Платёж возвращён.':'Оплата ещё не подтверждена. Проверьте позже.');
+  }catch(error){if(state.user?.id===uid)showToast(error.message,'error');}
+  finally{if(state.user?.id===uid){state.billingBusy=false;render();}}
 }
 
 function preferenceSwitch(name,title,description,value) {

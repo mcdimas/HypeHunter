@@ -20,6 +20,7 @@ from .translation import (
 )
 from .openai_client import translation_ready, translation_model, translation_effort
 from .trial import reserve_trial, trial_user
+from .live_billing import active_package
 from .config import Settings, get_settings
 from .database import get_session
 from .models import AppEvent, AuthIdentity, Competitor, ImportJob, Reel, Remix, TranslationBatch, User
@@ -166,6 +167,10 @@ def list_competitors(user_id: int = Depends(require_user_id), session: Session =
 @router.get("/trial")
 def trial_status(user_id: int = Depends(require_user_id), session: Session = Depends(get_session)):
     user = session.get(User, user_id)
+    paid = active_package(session, user_id)
+    if paid:
+        return {"limit": paid.quota, "used": paid.used, "remaining": max(0, paid.quota-paid.used),
+                "plan": paid.plan, "access_until": paid.access_until.isoformat()}
     return {"limit": user.trial_reels_limit, "used": user.trial_reels_used,
             "remaining": None if user.trial_reels_limit is None else max(0, user.trial_reels_limit - user.trial_reels_used)}
 
@@ -183,6 +188,9 @@ def create_competitor(
         raise HTTPException(422, "Этот аккаунт не добавляется без отдельного запроса владельца")
     _check_import_budget(session, user_id, settings)
     trial_limit = reserve_trial(session, user_id, payload.platform)
+    paid = active_package(session, user_id)
+    if paid:
+        trial_limit = min(trial_limit, payload.requested_count, settings.apify_import_limit, 20)
     competitor = Competitor(
         user_id=user_id,
         handle=handle,
@@ -206,6 +214,7 @@ def create_competitor(
         status=initial_status,
         requested_count=trial_limit if trial_limit is not None else min(payload.requested_count, settings.apify_import_limit, 20),
         trial_reels_limit=trial_limit,
+        payment_id=paid.id if paid else None,
         stage="queued" if settings.apify_token else "waiting_for_token",
         stage_message="Задача поставлена в очередь" if settings.apify_token else "Конкурент сохранён. Для запуска нужен Apify token",
         progress_current=2,
@@ -748,12 +757,16 @@ def create_import(
 
     created_at = utc_now()
     trial_limit = reserve_trial(session, user_id, competitor.platform)
+    paid = active_package(session, user_id)
+    if paid:
+        trial_limit = min(trial_limit, payload.requested_count, settings.apify_import_limit, 20)
     initial_status = "queued" if settings.apify_token else "waiting_for_token"
     job = ImportJob(
         user_id=user_id,
         competitor_id=competitor.id,
         requested_count=trial_limit if trial_limit is not None else min(payload.requested_count, settings.apify_import_limit, 20),
         trial_reels_limit=trial_limit,
+        payment_id=paid.id if paid else None,
         status=initial_status,
         stage="queued" if settings.apify_token else "waiting_for_token",
         stage_message="Задача поставлена в очередь" if settings.apify_token else "Для запуска нужен Apify token",

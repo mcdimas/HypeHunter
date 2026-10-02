@@ -38,6 +38,20 @@ test('one-ruble sandbox checkout is removed from the profile',()=>{
   assert.doesNotMatch(c.run('accountSubscription()'),/Тестовая подписка|test-checkout|1 ₽/);
 });
 
+test('paid package form has explicit consent and no auto-renew, respects active access',()=>{
+  const c=appContext();
+  c.run('state.user={id:1,email:"receipt@mail.ru"};state.trial={limit:5,used:0,remaining:5};state.billing={available:true,plans:{start:{name:"Старт",amount:"1999.00",quota:40}},payments:[]};state.checkoutPlan="start"');
+  const html=c.run('accountSubscription()');
+  assert.match(html,/data-checkout-form/);assert.match(html,/accept_offer[^>]*required/);
+  assert.match(html,/не привязывается как способ входа/);
+  assert.match(html,/Без автопродления и автосписаний/);
+  c.run('state.billing.subscription={plan:"start",quota:40,used:3,access_until:"2026-11-01T12:00:00Z"};state.trial={plan:"start",limit:40,used:3,remaining:37,access_until:"2026-11-01T12:00:00Z"}');
+  assert.doesNotMatch(c.run('accountSubscription()'),/data-checkout-form/);
+  assert.match(c.run('trialMarkup()'),/осталось 37/);
+  assert.equal(c.run('accountPlanLabel()'),'Старт');
+  c.run('clearAccountMemory()');assert.equal(c.run('state.billing'),null);assert.equal(c.run('state.checkoutPlan'),null);
+});
+
 test("themes persist and profile tabs show truthful account limits", () => {
   const c=appContext();
   c.run("setTheme('light')");
@@ -47,7 +61,7 @@ test("themes persist and profile tabs show truthful account limits", () => {
   assert.match(c.run("accountAppearance()"),/data-theme="light" aria-pressed="true"/);
   const subscription=c.run('accountSubscription()');
   assert.match(subscription,/1 999/);assert.match(subscription,/3 900/);
-  assert.match(subscription,/Осталось 3/);assert.match(subscription,/disabled>Оплата скоро/);
+  assert.match(subscription,/Осталось 3/);assert.match(subscription,/disabled>Оплата недоступна/);
   c.run("state.preferences={scenario_tone:'neutral',brand_name:'<script>',offer:'',hook_length:'medium'}");
   assert.match(c.run('accountPreferencesForm(false)'),/&lt;script&gt;/);
   c.run('clearAccountMemory()');
@@ -61,7 +75,7 @@ test("trial shows remaining lifetime Reels and clears on account switch", () => 
   assert.match(c.run("trialMarkup()"), /2 из 5/);
   assert.match(c.run("trialMarkup()"), /20 последних/);
   c.run('state.trial={limit:5,used:5,remaining:0}');
-  assert.match(c.run("trialMarkup()"), /после запуска подписок/);
+  assert.match(c.run("trialMarkup()"), /выберите пакет/);
   c.run("clearAccountMemory()");
   assert.equal(c.run("trialMarkup()"), "");
 });
@@ -175,8 +189,10 @@ test("public landing has honest pricing, legal details and correct guest/member 
   assert.match(guest,/href="\/login" data-route>Подключиться/);
   assert.match(guest,/1 999/);assert.match(guest,/3 900/);
   assert.doesNotMatch(guest,/2 490|4 900|href="#"|pantela/i);
-  assert.match(guest,/деньги не списываются/);
-  assert.match(guest,/Объёмы указаны для будущих тарифов/);
+  assert.match(guest,/Без сохранения карты и автосписаний/);
+  assert.match(guest,/₽ \/ 30 дней/);
+  assert.match(guest,/return_to=%2Faccount%3Ftab%3Dsubscription%26plan%3Dstart/);
+  assert.match(guest,/return_to=%2Faccount%3Ftab%3Dsubscription%26plan%3Dpro/);
   assert.match(guest,/Демичев Дмитрий Дмитриевич/);
   assert.match(guest,/772460063060/);
   c.run('state.user={id:1,display_name:"Private owner"};state.route="/";render()');

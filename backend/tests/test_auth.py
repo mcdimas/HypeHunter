@@ -81,7 +81,8 @@ def test_live_credentials_do_not_enable_checkout(auth_app, monkeypatch):
     complete_login(app, client, headers, 918241, 'Live disabled test', 9182410)
     assert client.get('/api/billing/test').json()['available'] is False
     assert client.post('/api/billing/test/checkout', headers=headers).status_code == 404
-    assert client.post('/api/billing/checkout', headers=headers).status_code == 404
+    assert client.get('/api/billing/status').json()['available'] is False
+    assert client.post('/api/billing/checkout', headers=headers, json={'plan':'start','receipt_email':'test@mail.ru','accept_offer':True,'offer_version':'2026-10-02'}).status_code == 503
 
 
 def test_yookassa_owner_sandbox_checkout_and_verified_notifications(auth_app, monkeypatch):
@@ -419,6 +420,93 @@ def auth_app(monkeypatch, tmp_path):
     main.app.dependency_overrides[get_settings] = lambda: settings
     yield main.app, engine
     main.app.dependency_overrides.clear()
+
+
+def test_live_package_flow_csrf_webhook_quota_and_receipt_isolation(auth_app, monkeypatch):
+    from app import live_billing
+    from app.models import Payment
+    app, engine = auth_app
+    settings = app.dependency_overrides[get_settings]()
+    settings.billing_enabled=True
+    settings.yookassa_shop_id='live-test-shop'
+    settings.yookassa_secret_key='fake-live'
+    settings.apify_token='fake'
+    settings.ai_provider='yandex'
+    settings.yandex_ai_enabled=True
+    settings.yandex_ai_api_key='fake'
+    settings.yandex_ai_folder_id='fake'
+    first, headers=browser(app)
+    complete_login(app,first,headers,938351,'Billing flow',9383510)
+    uid=first.get('/api/auth/me').json()['id']
+    other, other_headers=browser(app)
+    complete_login(app,other,other_headers,938352,'Other billing flow',9383520)
+    remote={}
+    def provider(config,method,path,payload=None,key=None):
+        if method=='POST':
+            remote.update(id='provider-'+key,status='pending',paid=False,test=False,
+                amount=payload['amount'],metadata=payload['metadata'],recipient={'account_id':settings.yookassa_shop_id},
+                confirmation={'confirmation_url':'https://yoomoney.ru/checkout/example'})
+        return dict(remote)
+    monkeypatch.setattr(live_billing,'provider_request',provider)
+    body={'plan':'start','receipt_email':'billingflow@mail.ru','accept_offer':True,'offer_version':live_billing.OFFER_VERSION}
+    assert first.post('/api/billing/checkout',json=body).status_code==403
+    made=first.post('/api/billing/checkout',json=body,headers=headers)
+    assert made.status_code==200,made.text
+    oid=made.json()['id']
+    assert first.post('/api/billing/checkout',json={**body,'amount':'1.00'},headers=headers).status_code==422
+    assert other.post(f'/api/billing/payments/{oid}/refresh',headers=other_headers).status_code==404
+    assert other.get('/api/billing/receipts').status_code==404
+    remote.update(status='succeeded',paid=True)
+    with Session(engine) as s:
+        p=s.get(Payment,oid);p.checked_at=utc_now()-timedelta(seconds=10);s.add(p);s.commit()
+    assert first.post('/api/billing/yookassa/webhook',json={'type':'notification','event':'payment.succeeded','object':remote}).status_code==200
+    assert first.get('/api/trial').json()['limit']==40
+    assert other.get('/api/trial').json()['limit']==5
+    assert not first.get('/api/auth/me').json().get('email')
+    assert first.get('/api/billing/status').json()['auto_renew'] is False
+    assert other.get('/api/billing/status').json()['payments']==[]
+    assert first.post('/api/billing/checkout',json=body,headers=headers).status_code==409
+    settings.owner_telegram_id=938351
+    assert first.get('/api/billing/receipts').json()[0]['receipt_email']=='billingflow@mail.ru'
+    with Session(engine) as s:
+        p=s.get(Payment,oid);assert p.used==0
+        p.access_until=utc_now()-timedelta(seconds=1);s.add(p);s.commit()
+    assert first.get('/api/trial').json()['limit']==5
+
+
+@pytest.mark.skipif(not os.getenv('AUTH_PG_TEST_URL'),reason='PostgreSQL paid checkout race')
+def test_live_checkout_race_single_order_and_single_grant(auth_app,monkeypatch):
+    from app.live_billing import checkout, Checkout, OFFER_VERSION
+    from app.models import Payment
+    app, engine=auth_app
+    settings=app.dependency_overrides[get_settings]()
+    settings.billing_enabled=True;settings.yookassa_shop_id='race-shop';settings.yookassa_secret_key='fake-live'
+    settings.apify_token='fake';settings.openai_enabled=True;settings.openai_api_key='fake'
+    with Session(engine) as s:
+        user=User();s.add(user);s.commit();uid=user.id
+    calls=[]
+    def provider(config,method,path,payload=None,key=None):
+        calls.append(method)
+        oid=key if method=='POST' else path.removeprefix('payments/provider-')
+        return {'id':'provider-'+oid,'test':False,'paid':True,'status':'succeeded',
+            'amount':{'value':'1999.00','currency':'RUB'},'metadata':{'order_id':oid,'user_id':str(uid)},
+            'recipient':{'account_id':'race-shop'}}
+    monkeypatch.setattr('app.live_billing.provider_request',provider)
+    body=Checkout(plan='start',receipt_email='race@mail.ru',accept_offer=True,offer_version=OFFER_VERSION)
+    def attempt(_):
+        from fastapi import HTTPException
+        try:
+            with Session(engine) as s:return checkout(body,s,settings,uid)['id']
+        except HTTPException as e:return e.status_code
+    with ThreadPoolExecutor(max_workers=4) as pool:results=list(pool.map(attempt,range(4)))
+    with Session(engine) as s:
+        orders=s.exec(select(Payment).where(Payment.user_id==uid)).all()
+        assert len(orders)==1 and orders[0].access_until is not None
+        # A concurrent request may reuse pending checkout or observe completed
+        # access. Both are safe; timing must not make this assertion flaky.
+        assert set(results) <= {409,orders[0].id}
+        assert calls.count('POST')==1
+        assert (orders[0].access_until-orders[0].access_from).days==30
 
 
 def browser(app):

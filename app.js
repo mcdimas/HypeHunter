@@ -12,10 +12,11 @@ const state = {
 let searchTimer, draftTimer, importPollTimer, authPollTimer, savePromise, authPollInFlight;
 let requestId = 0, routeRequestId = 0, accountVersion = 0, loginAttempt = 0, draftRevision = 0;
 function cancelledRequest() { return new DOMException("", "AbortError"); }
+function accountPlanLabel(){return state.trial?.plan==='pro'?'Про':state.trial?.plan==='start'?'Старт':state.trial?.limit===null?'Ранний доступ':'Бесплатный';}
 function restoredReturnPath() { try { const id=sessionStorage.getItem("auth-user-id"), value=sessionStorage.getItem(`editor-return:${id}`); return value && /^\/(library|content-plan)(\?|$)/.test(value) ? value : "/content-plan"; } catch { return "/content-plan"; } }
 function recoveryKey(slug) { return `draft:${state.user?.id}:${slug}`; }
 function clearAccountMemory() {
-  state.emailLogin=null;state.trial=null;state.preferences=null;state.accountMenuOpen=false;
+  state.emailLogin=null;state.trial=null;state.preferences=null;state.billing=null;state.billingBusy=false;state.checkoutPlan=null;state.accountMenuOpen=false;
   clearTimeout(importPollTimer);clearTimeout(authPollTimer);clearTimeout(draftTimer);clearTimeout(searchTimer);
   accountVersion++;requestId++;routeRequestId++;loginAttempt++;
   toastRegion.replaceChildren();
@@ -66,7 +67,7 @@ function readRouteQuery() {
   if(state.route==="/content-plan"){state.planView=p.get("view")==="calendar"?"calendar":"board";state.planFormat=["reels","threads"].includes(p.get("format"))?p.get("format"):"all";state.planQuery=p.get("q")||"";const week=p.get("week");state.calendarWeek=week && /^\d{4}-\d{2}-\d{2}$/.test(week) && !Number.isNaN(Date.parse(week))?weekStart(week):weekStart();}
 }
 function navLink(path,label,i) { return `<a href="${path}" class="nav-link ${(state.route.startsWith("/remixes/")?new URL(state.editorReturn,location.origin).pathname:state.route)===path.split("?")[0]?"active":""}" data-route>${icon(i)}${label}</a>`; }
-function sidebar() { return `<button class="mobile-overlay" data-action="close-nav" aria-label="Закрыть навигацию"></button><aside class="sidebar" ${matchMedia("(max-width:680px)").matches&&!state.mobileNav?"inert":""}><a class="brand" href="/today" data-route><span class="brand-mark">${icon("target")}</span>HYPE HUNTER</a><p class="studio-label">Моя студия</p><nav aria-label="Основная навигация">${navLink("/today","Сегодня","house")}${navLink(libraryURL(),"Библиотека","video")}${navLink("/content-plan","Контент-план","calendar-blank")}<span class="nav-label">Источники</span>${navLink("/competitors","Конкуренты","users")}</nav><div class="sidebar-foot"><div class="account-menu" ${state.accountMenuOpen?'':'hidden'}><a href="/account" data-route>Профиль</a><a href="/account?tab=subscription" data-route>Подписка</a><button type="button" data-theme="toggle">${icon('sun')}Сменить тему</button><button type="button" data-action="logout">${icon('sign-out')}Выйти</button></div><button class="account-menu-trigger" type="button" data-action="account-menu" aria-expanded="${!!state.accountMenuOpen}">${userAvatar("sidebar-avatar")}<span>${escapeHtml(state.user?.display_name||"Аккаунт")}<small>${state.trial?.limit===null?'Ранний доступ':'Бесплатный'}</small></span>${icon("caret-up")}</button></div></aside>`; }
+function sidebar() { return `<button class="mobile-overlay" data-action="close-nav" aria-label="Закрыть навигацию"></button><aside class="sidebar" ${matchMedia("(max-width:680px)").matches&&!state.mobileNav?"inert":""}><a class="brand" href="/today" data-route><span class="brand-mark">${icon("target")}</span>HYPE HUNTER</a><p class="studio-label">Моя студия</p><nav aria-label="Основная навигация">${navLink("/today","Сегодня","house")}${navLink(libraryURL(),"Библиотека","video")}${navLink("/content-plan","Контент-план","calendar-blank")}<span class="nav-label">Источники</span>${navLink("/competitors","Конкуренты","users")}</nav><div class="sidebar-foot"><div class="account-menu" ${state.accountMenuOpen?'':'hidden'}><a href="/account" data-route>Профиль</a><a href="/account?tab=subscription" data-route>Подписка</a><button type="button" data-theme="toggle">${icon('sun')}Сменить тему</button><button type="button" data-action="logout">${icon('sign-out')}Выйти</button></div><button class="account-menu-trigger" type="button" data-action="account-menu" aria-expanded="${!!state.accountMenuOpen}">${userAvatar("sidebar-avatar")}<span>${escapeHtml(state.user?.display_name||"Аккаунт")}<small>${accountPlanLabel()}</small></span>${icon("caret-up")}</button></div></aside>`; }
 function dialogMarkup() {
   const d=state.dialog; if(!d)return"";
   return `<div class="dialog-backdrop"><section class="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><button class="icon-button dialog-close" data-action="close-dialog" aria-label="Закрыть">${icon("x")}</button><h2 id="dialog-title">${escapeHtml(d.title)}</h2><p class="dialog-text">${escapeHtml(d.text)}</p><div class="dialog-actions"><button class="button secondary" data-action="close-dialog">${d.confirmAction?"Отмена":"Закрыть"}</button>${d.confirmAction?`<button class="button ${d.destructive?"danger":"primary"}" data-action="${d.confirmAction}">${escapeHtml(d.confirmLabel||"Подтвердить")}</button>`:""}</div></section></div>`;
@@ -114,7 +115,7 @@ async function loadRouteData(){
   routeAccess();
   if(state.route!=="/login"){loginAttempt++;clearTimeout(authPollTimer);state.authChallenge=null;state.emailLogin=null;state.authStatus="";state.authBusy=false;}
   if(state.route==="/"||!state.user){render();return;}
-  if(state.route==="/account"){const [sessions,preferences,trial]=await Promise.all([apiRequest("/auth/sessions"),apiRequest("/auth/preferences"),apiRequest("/trial")]);if(id!==routeRequestId)return;state.sessions=sessions;state.preferences=preferences;state.trial=trial;render();}
+  if(state.route==="/account"){const [sessions,preferences,trial,billing]=await Promise.all([apiRequest("/auth/sessions"),apiRequest("/auth/preferences"),apiRequest("/trial"),apiRequest("/billing/status")]);if(id!==routeRequestId)return;state.sessions=sessions;state.preferences=preferences;state.trial=trial;state.billing=billing;const params=new URLSearchParams(location.search),plan=params.get('plan');if(['start','pro'].includes(plan)&&billing.available&&!billing.subscription)state.checkoutPlan=plan;render();const payment=params.get('payment');if(payment&&billing.payments.some(p=>p.id===payment))await refreshPayment(payment);}
   else if(state.route==="/library")await loadReels();
   else if(state.route==="/competitors"){await Promise.all([loadCompetitors(),loadImports(),loadTranslations()]);if(id!==routeRequestId)return;render();scheduleImportPolling();}
   else if(state.route==="/content-plan"){await loadRemixes();if(id!==routeRequestId)return;render();}
@@ -235,6 +236,8 @@ app.addEventListener("click",async event=>{
     else if(action==="copy-account-id"){
       try{await navigator.clipboard.writeText(String(state.user.id));showToast("ID аккаунта скопирован");}catch{showToast(`Ваш ID: ${state.user.id}`);}
     }
+    else if(action==="refresh-payment"){await refreshPayment(target.dataset.paymentId);}
+    else if(action==="choose-plan"){if(['start','pro'].includes(target.dataset.plan)){state.checkoutPlan=target.dataset.plan;render();app.querySelector('[data-checkout-form] input')?.focus();}}
     else if(action==="close-dialog"){state.dialog=null;render();}
     else if(action==="retry"){await bootstrap();}
     else if(action==="new-remix"||action==="remix"){
@@ -302,6 +305,7 @@ app.addEventListener("change",async event=>{
   }catch(e){showToast(e.message,"error");render();}
 });
 app.addEventListener("submit",async event=>{
+  if(event.target.matches("[data-checkout-form]")){event.preventDefault();await beginCheckout(event.target);return;}
   if(event.target.matches("[data-email-form]")){event.preventDefault();await submitEmailLogin(event.target);return;}
   if(event.target.matches("[data-profile-form]")){event.preventDefault();await saveProfile();return;}
   if(event.target.matches("[data-preferences-form]")){event.preventDefault();await savePreferences(event.target);return;}

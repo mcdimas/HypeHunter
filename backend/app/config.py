@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     yookassa_test_secret_key: str = Field(default="", repr=False)
     yookassa_shop_id: str = ""
     yookassa_secret_key: str = Field(default="", repr=False)
+    billing_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

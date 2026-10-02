@@ -71,6 +71,7 @@ services:
       YOOKASSA_TEST_SECRET_KEY: ${YOOKASSA_TEST_SECRET_KEY:-}
       YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-}
       YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
     expose:
       - "8000"
     volumes:

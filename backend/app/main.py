@@ -13,6 +13,7 @@ from .models import Competitor, Reel, User
 from .yandex_auth import router as yandex_router
 from .email_auth import router as email_router
 from .billing import router as billing_router, WEBHOOK_PATH
+from .live_billing import router as live_billing_router, WEBHOOK_PATH as LIVE_WEBHOOK_PATH, start_reconciliation
 
 
 settings = get_settings()
@@ -23,9 +24,13 @@ PRIVATE_HEADERS = {"Cache-Control": "private, no-store", "X-Content-Type-Options
 async def lifespan(_: FastAPI):
     settings.media_root.mkdir(parents=True, exist_ok=True)
     polling = start_telegram_polling(settings)
+    billing_worker = start_reconciliation(settings, engine)
     try:
         yield
     finally:
+        if billing_worker:
+            billing_worker[0].set()
+            billing_worker[1].join(timeout=22)
         if polling:
             polling[0].set()
             polling[1].join(timeout=22)
@@ -49,8 +54,9 @@ async def account_boundary(request, call_next):
         "/api/auth/yandex/start", "/api/auth/yandex/callback",
         "/api/auth/email/start", "/api/auth/email/finish",
         WEBHOOK_PATH,
+        LIVE_WEBHOOK_PATH,
     }
-    if request.method not in {"GET", "HEAD", "OPTIONS"} and path not in {"/api/telegram/webhook", WEBHOOK_PATH}:
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and path not in {"/api/telegram/webhook", WEBHOOK_PATH, LIVE_WEBHOOK_PATH}:
         try:
             validate_csrf(request, settings)
         except Exception as error:
@@ -87,4 +93,5 @@ app.include_router(webhook_router)
 app.include_router(yandex_router)
 app.include_router(email_router)
 app.include_router(billing_router)
+app.include_router(live_billing_router)
 app.mount("/media", StaticFiles(directory=settings.media_root, check_dir=False), name="media")
